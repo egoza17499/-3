@@ -4,7 +4,6 @@ from database import Database
 
 logger = logging.getLogger(__name__)
 router = Router()
-db = Database('bot_database.db')
 
 @router.message(lambda msg: msg.text not in ["👤 Мой профиль", "📚 Полезная информация", "🛡 Административные функции"])
 async def search_aerodrome(message: types.Message, db: Database):
