@@ -17,6 +17,9 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db = Database(DB_NAME)
 
+# Хранилище для отслеживания кто уже получил приветствие
+welcomed_users = set()
+
 # Машина состояний для регистрации
 class RegistrationState(StatesGroup):
     fio = State()
@@ -81,13 +84,10 @@ async def cmd_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     is_admin = user_id in ADMIN_IDS or db.check_admin_status(user_id)
     
-    # Добавляем пользователя в БД
     db.add_user(user_id, message.from_user.username)
-    
-    # Проверяем регистрацию
     user = db.get_user(user_id)
     
-    if user and user[15]:  # registration_complete
+    if user and user[15]:
         await message.answer(
             f"С возвращением, {message.from_user.full_name}!",
             reply_markup=get_main_keyboard(is_admin)
@@ -100,7 +100,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await state.set_state(RegistrationState.fio)
         await message.answer("1️⃣ Введите вашу Фамилию Имя Отчество:")
 
-# Регистрация
+# Регистрация (все шаги)
 @dp.message(RegistrationState.fio)
 async def reg_fio(message: types.Message, state: FSMContext):
     await state.update_data(fio=message.text)
@@ -124,16 +124,11 @@ async def reg_leave(message: types.Message, state: FSMContext):
     if '-' not in message.text:
         await message.answer("❌ Неверный формат! Используйте: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
         return
-    
     parts = message.text.split('-')
     if len(parts) != 2:
         await message.answer("❌ Ошибка! Введите две даты через дефис")
         return
-    
-    await state.update_data(
-        leave_start_date=parts[0].strip(),
-        leave_end_date=parts[1].strip()
-    )
+    await state.update_data(leave_start_date=parts[0].strip(), leave_end_date=parts[1].strip())
     await state.set_state(RegistrationState.vlk_date)
     await message.answer("5️⃣ Введите дату ВЛК (ДД.ММ.ГГГГ):")
 
@@ -142,7 +137,6 @@ async def reg_vlk(message: types.Message, state: FSMContext):
     if not is_valid_date(message.text):
         await message.answer("❌ Неверный формат! Используйте: ДД.ММ.ГГГГ")
         return
-    
     await state.update_data(vlk_date=message.text)
     await state.set_state(RegistrationState.umo_date)
     await message.answer("6️⃣ Введите дату УМО (ДД.ММ.ГГГГ) или 'нет':")
@@ -192,7 +186,6 @@ async def reg_ex7_md_90a(message: types.Message, state: FSMContext):
 
 @dp.message(RegistrationState.parachute_jump)
 async def reg_finish(message: types.Message, state: FSMContext):
-    # Проверяем на "освобожден"
     if message.text.lower() in ['освобожден', 'освобождён', 'осв']:
         parachute = 'освобожден'
     elif not is_valid_date(message.text):
@@ -201,20 +194,15 @@ async def reg_finish(message: types.Message, state: FSMContext):
     else:
         parachute = message.text
     
-    # Получаем все данные
     data = await state.get_data()
     data['parachute_jump_date'] = parachute
     
-    # Сохраняем в БД
     chat_id = message.from_user.id
     db.update_user(chat_id, **data)
     db.set_registration_complete(chat_id)
     
     await state.clear()
-    
     is_admin = chat_id in ADMIN_IDS or db.check_admin_status(chat_id)
-    
-    # Показываем профиль
     user = db.get_user(chat_id)
     profile_text = generate_profile_text(user)
     
@@ -222,10 +210,7 @@ async def reg_finish(message: types.Message, state: FSMContext):
     if bans:
         profile_text += "\n\nПОЛЁТЫ ЗАПРЕЩЕНЫ:\n" + "\n".join(bans)
     
-    await message.answer(
-        "✅ Регистрация завершена!\n\n" + profile_text,
-        reply_markup=get_main_keyboard(is_admin)
-    )
+    await message.answer("✅ Регистрация завершена!\n\n" + profile_text, reply_markup=get_main_keyboard(is_admin))
 
 # Кнопки главного меню
 @dp.message(lambda msg: msg.text == "👤 Мой профиль")
@@ -234,20 +219,15 @@ async def show_profile(message: types.Message):
     if not user:
         await message.answer("❌ Сначала пройдите регистрацию (/start)")
         return
-    
     profile_text = generate_profile_text(user)
     bans = check_flight_ban(user)
     if bans:
         profile_text += "\n\nПОЛЁТЫ ЗАПРЕЩЕНЫ:\n" + "\n".join(bans)
-    
     await message.answer(profile_text, reply_markup=get_profile_keyboard())
 
 @dp.message(lambda msg: msg.text == "📚 Полезная информация")
 async def show_info(message: types.Message):
-    await message.answer(
-        "📚 Полезная информация\n\n"
-        "Введите название аэродрома или города для поиска контактной информации."
-    )
+    await message.answer("📚 Полезная информация\n\nВведите название аэродрома или города для поиска контактной информации.")
 
 @dp.message(lambda msg: msg.text == "🛡 Административные функции")
 async def admin_functions(message: types.Message):
@@ -255,20 +235,13 @@ async def admin_functions(message: types.Message):
     if user_id not in ADMIN_IDS and not db.check_admin_status(user_id):
         await message.answer("❌ У вас нет доступа")
         return
-    
-    await message.answer(
-        "🛡 Административные функции",
-        reply_markup=get_admin_keyboard()
-    )
+    await message.answer("🛡 Административные функции", reply_markup=get_admin_keyboard())
 
 # Callback handlers
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: types.CallbackQuery):
     is_admin = callback.from_user.id in ADMIN_IDS or db.check_admin_status(callback.from_user.id)
-    await callback.message.edit_text(
-        "Главное меню",
-        reply_markup=get_main_keyboard(is_admin)
-    )
+    await callback.message.edit_text("Главное меню", reply_markup=get_main_keyboard(is_admin))
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "back_to_profile")
@@ -278,19 +251,13 @@ async def back_to_profile(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "edit_profile")
 async def edit_profile(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "✏️ Редактирование профиля\n\nВыберите поле:",
-        reply_markup=get_edit_profile_keyboard()
-    )
+    await callback.message.edit_text("✏️ Редактирование профиля\n\nВыберите поле:", reply_markup=get_edit_profile_keyboard())
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_back")
 async def admin_back(callback: types.CallbackQuery):
     is_admin = callback.from_user.id in ADMIN_IDS or db.check_admin_status(callback.from_user.id)
-    await callback.message.edit_text(
-        "Главное меню",
-        reply_markup=get_main_keyboard(is_admin)
-    )
+    await callback.message.edit_text("Главное меню", reply_markup=get_main_keyboard(is_admin))
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_list")
@@ -300,13 +267,11 @@ async def admin_list(callback: types.CallbackQuery):
         await callback.message.edit_text("📋 Список пуст")
         await callback.answer()
         return
-    
     text = "📋 Список пользователей:\n\n"
     for user in users:
         fio = user[3] or "Не указано"
         rank = user[4] or "Не указано"
         text += f"• {fio} ({rank})\n"
-    
     await callback.message.edit_text(text)
     await callback.answer()
 
@@ -314,35 +279,27 @@ async def admin_list(callback: types.CallbackQuery):
 async def admin_stats(callback: types.CallbackQuery):
     users = db.get_all_users()
     total = len(users)
-    
-    # Считаем кто может летать
     can_fly = 0
     for user in users:
         bans = check_flight_ban(user)
         if not bans:
             can_fly += 1
-    
     text = f"📊 Статистика:\n\n"
     text += f"👥 Всего пользователей: {total}\n"
     text += f"✅ Готовы к полётам: {can_fly}\n"
     text += f"🚫 Не могут летать: {total - can_fly}"
-    
     await callback.message.edit_text(text)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_fill_airports")
 async def admin_fill_airports(callback: types.CallbackQuery):
     await callback.message.edit_text("⏳ Заполняю базу аэродромов...")
-    # Здесь будет код заполнения базы
     await callback.message.edit_text("✅ База заполнена!")
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_manage")
 async def admin_manage(callback: types.CallbackQuery):
-    text = "👥 Управление администраторами\n\n"
-    text += "Выберите действие:\n"
-    text += "➕ Добавить админа\n"
-    text += "➖ Удалить админа"
+    text = "👥 Управление администраторами\n\nВыберите действие:\n➕ Добавить админа\n➖ Удалить админа"
     await callback.message.edit_text(text)
     await callback.answer()
 
@@ -351,12 +308,54 @@ async def admin_manage(callback: types.CallbackQuery):
 async def search_aerodrome(message: types.Message):
     keyword = message.text
     results = db.search_aerodromes(keyword)
-    
     if results:
         for result in results:
             await message.answer(result[0])
     else:
         await message.answer("❌ Информация не найдена")
+
+# ========== АВТОПРИВЕТСТВИЕ В ТЕМЕ ГРУППЫ ==========
+
+@dp.message(lambda msg: msg.chat.type in ['group', 'supergroup'])
+async def group_welcome_handler(message: types.Message):
+    """Автоматическое приветствие в теме группы"""
+    
+    # Проверяем что это нужная тема
+    if message.message_thread_id != TOPIC_ID:
+        return
+    
+    # Игнорируем сообщения от бота
+    if message.from_user.is_bot:
+        return
+    
+    # Игнорируем системные сообщения
+    if message.new_chat_members or message.left_chat_member:
+        return
+    
+    user_id = message.from_user.id
+    
+    # Проверяем не приветствовали ли уже этого пользователя
+    if user_id in welcomed_users:
+        return
+    
+    # Помечаем что пользователь уже получил приветствие
+    welcomed_users.add(user_id)
+    
+    # Ссылка на бота
+    bot_username = "help_81polk_bot"
+    bot_link = f"https://t.me/{bot_username}"
+    
+    # Отправляем приветствие
+    welcome_text = (
+        f"Здравствуйте, {message.from_user.full_name}! 👋\n\n"
+        f"Бот доступен по ссылке: {bot_link}\n\n"
+        f"Для начала пользования перейдите по ссылке и нажмите /start"
+    )
+    
+    try:
+        await message.answer(welcome_text, reply_to_message_id=message.message_id)
+    except Exception as e:
+        logging.error(f"Ошибка отправки приветствия: {e}")
 
 # Запуск бота
 async def main():
