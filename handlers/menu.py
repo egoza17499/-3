@@ -6,7 +6,6 @@ from database import Database
 
 logger = logging.getLogger(__name__)
 router = Router()
-db = Database('bot_database.db')
 
 def get_main_keyboard(is_admin=False):
     keyboard = [
