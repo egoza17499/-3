@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -100,7 +101,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await state.set_state(RegistrationState.fio)
         await message.answer("1️⃣ Введите вашу Фамилию Имя Отчество:")
 
-# Регистрация (все шаги)
+# Регистрация
 @dp.message(RegistrationState.fio)
 async def reg_fio(message: types.Message, state: FSMContext):
     await state.update_data(fio=message.text)
@@ -314,8 +315,7 @@ async def search_aerodrome(message: types.Message):
     else:
         await message.answer("❌ Информация не найдена")
 
-# ========== АВТОПРИВЕТСТВИЕ В ТЕМЕ ГРУППЫ ==========
-
+# Автоприветствие в теме группы
 @dp.message(lambda msg: msg.chat.type in ['group', 'supergroup'])
 async def group_welcome_handler(message: types.Message):
     """Автоматическое приветствие в теме группы"""
@@ -360,14 +360,39 @@ async def group_welcome_handler(message: types.Message):
 # Запуск бота
 async def main():
     logging.info("🚀 Запуск бота...")
+    
     try:
-        await asyncio.sleep(2)
-        await bot.delete_webhook(drop_pending_updates=True)
-        await asyncio.sleep(1)
+        # Принудительная очистка webhook (несколько попыток)
+        logging.info("🔄 Принудительная очистка webhook...")
+        for attempt in range(5):
+            try:
+                logging.info(f"Попытка {attempt + 1}/5: Удаление webhook...")
+                await bot.delete_webhook(drop_pending_updates=True)
+                logging.info(f"✅ Попытка {attempt + 1} успешна")
+                await asyncio.sleep(3)
+            except Exception as e:
+                logging.warning(f"⚠️ Попытка {attempt + 1} не удалась: {e}")
+                await asyncio.sleep(5)
+        
+        # Дополнительная задержка чтобы старые экземпляры точно остановились
+        logging.info("⏳ Дополнительное ожидание (10 сек)...")
+        await asyncio.sleep(10)
+        
+        # Финальная проверка
+        try:
+            webhook_info = await bot.get_webhook_info()
+            logging.info(f"📊 Webhook URL: {webhook_info.url or 'не установлен'}")
+        except Exception as e:
+            logging.warning(f"⚠️ Не удалось получить информацию о webhook: {e}")
+        
+        # Запускаем polling
         logging.info("✅ Запускаем polling...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        
     except Exception as e:
         logging.error(f"❌ Ошибка запуска: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         logging.info("🛑 Остановка бота...")
         await bot.session.close()
