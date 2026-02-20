@@ -1,28 +1,15 @@
-# Bot Configuration
 BOT_TOKEN = "8588215677:AAHTNObumWu8SEd2qNpjYYVw0B5PkVflOKA"
 GROUP_ID = -1003546878934
 TOPIC_ID = 51
 MAIN_ADMIN_ID = 393293807
-
-# Database
+ADMIN_IDS = [393293807]
 DB_NAME = "bot_database.db"
-
-# Date format
 DATE_FORMAT = "%d.%m.%Y"
-
-# Validation periods (in days)
-VLK_PERIOD = 180  # 6 месяцев
-UMO_PERIOD = 360  # 12 месяцев
-EXERCISE_4_PERIOD = 180  # 6 месяцев
-EXERCISE_7_PERIOD = 360  # 12 месяцев
-LEAVE_PERIOD = 360  # 12 месяцев
-PARACHUTE_PERIOD = 360  # 12 месяцев
-
-# Warning periods (in days)
+VLK_PERIOD = 180
+UMO_PERIOD = 360
+EXERCISE_4_PERIOD = 180
+EXERCISE_7_PERIOD = 360
+LEAVE_PERIOD = 360
+PARACHUTE_PERIOD = 360
 WARNING_PERIOD = 30
-
-# Aircraft types
-AIRCRAFT_TYPES = {
-    "IL76MD_M": "ИЛ-76 МД-М",
-    "IL76MD_90A": "ИЛ-76 МД-90А"
-}
+AIRCRAFT_TYPES = {"IL76MD_M": "ИЛ-76 МД-М", "IL76MD_90A": "ИЛ-76 МД-90А"}
