@@ -89,35 +89,35 @@ async def cmd_start(message: types.Message, state: FSMContext):
     
     if user and user[15]:  # registration_complete
         await message.answer(
-            f"👋 С возвращением, {message.from_user.full_name}!",
+            f"С возвращением, {message.from_user.full_name}!",
             reply_markup=get_main_keyboard(is_admin)
         )
     else:
         await message.answer(
-            "👋 Добро пожаловать! Для доступа к функциям необходимо пройти регистрацию.\n\n"
+            "Добро пожаловать! Для доступа к функциям необходимо пройти регистрацию.\n\n"
             "Начнём регистрацию?"
         )
         await state.set_state(RegistrationState.fio)
-        await message.answer("1️⃣ Введите вашу **Фамилию Имя Отчество**:")
+        await message.answer("1️⃣ Введите вашу Фамилию Имя Отчество:")
 
 # Регистрация
 @dp.message(RegistrationState.fio)
 async def reg_fio(message: types.Message, state: FSMContext):
     await state.update_data(fio=message.text)
     await state.set_state(RegistrationState.rank)
-    await message.answer("2️⃣ Введите **воинское звание**:")
+    await message.answer("2️⃣ Введите воинское звание:")
 
 @dp.message(RegistrationState.rank)
 async def reg_rank(message: types.Message, state: FSMContext):
     await state.update_data(rank=message.text)
     await state.set_state(RegistrationState.qualification)
-    await message.answer("3️⃣ Введите **квалификацию**:")
+    await message.answer("3️⃣ Введите квалификацию:")
 
 @dp.message(RegistrationState.qualification)
 async def reg_qual(message: types.Message, state: FSMContext):
     await state.update_data(qualification=message.text)
     await state.set_state(RegistrationState.leave_dates)
-    await message.answer("4️⃣ Введите **даты отпуска** (формат: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ):")
+    await message.answer("4️⃣ Введите даты отпуска (формат: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ):")
 
 @dp.message(RegistrationState.leave_dates)
 async def reg_leave(message: types.Message, state: FSMContext):
@@ -135,7 +135,7 @@ async def reg_leave(message: types.Message, state: FSMContext):
         leave_end_date=parts[1].strip()
     )
     await state.set_state(RegistrationState.vlk_date)
-    await message.answer("5️⃣ Введите дату **ВЛК** (ДД.ММ.ГГГГ):")
+    await message.answer("5️⃣ Введите дату ВЛК (ДД.ММ.ГГГГ):")
 
 @dp.message(RegistrationState.vlk_date)
 async def reg_vlk(message: types.Message, state: FSMContext):
@@ -145,14 +145,14 @@ async def reg_vlk(message: types.Message, state: FSMContext):
     
     await state.update_data(vlk_date=message.text)
     await state.set_state(RegistrationState.umo_date)
-    await message.answer("6️⃣ Введите дату **УМО** (ДД.ММ.ГГГГ) или 'нет':")
+    await message.answer("6️⃣ Введите дату УМО (ДД.ММ.ГГГГ) или 'нет':")
 
 @dp.message(RegistrationState.umo_date)
 async def reg_umo(message: types.Message, state: FSMContext):
     umo = message.text if message.text.lower() != 'нет' else None
     await state.update_data(umo_date=umo)
     await state.set_state(RegistrationState.exercise_4_md_m)
-    await message.answer("7️⃣ **КБП-4 Ил-76 МД-М** (ДД.ММ.ГГГГ):")
+    await message.answer("7️⃣ Упражнение 4 программы 3 КБП (на самолете Ил-76 МД-М) (ДД.ММ.ГГГГ):")
 
 @dp.message(RegistrationState.exercise_4_md_m)
 async def reg_ex4_md_m(message: types.Message, state: FSMContext):
@@ -161,7 +161,7 @@ async def reg_ex4_md_m(message: types.Message, state: FSMContext):
         return
     await state.update_data(exercise_4_md_m_date=message.text)
     await state.set_state(RegistrationState.exercise_7_md_m)
-    await message.answer("8️⃣ **КБП-7 Ил-76 МД-М** (ДД.ММ.ГГГГ):")
+    await message.answer("8️⃣ Упражнение 7 программы 3 КБП (на самолете Ил-76 МД-М) (ДД.ММ.ГГГГ):")
 
 @dp.message(RegistrationState.exercise_7_md_m)
 async def reg_ex7_md_m(message: types.Message, state: FSMContext):
@@ -170,7 +170,7 @@ async def reg_ex7_md_m(message: types.Message, state: FSMContext):
         return
     await state.update_data(exercise_7_md_m_date=message.text)
     await state.set_state(RegistrationState.exercise_4_md_90a)
-    await message.answer("9️⃣ **КБП-4 Ил-76 МД-90А** (ДД.ММ.ГГГГ):")
+    await message.answer("9️⃣ Упражнение 4 программы 3 КБП (на самолете Ил-76 МД-90А) (ДД.ММ.ГГГГ):")
 
 @dp.message(RegistrationState.exercise_4_md_90a)
 async def reg_ex4_md_90a(message: types.Message, state: FSMContext):
@@ -179,7 +179,7 @@ async def reg_ex4_md_90a(message: types.Message, state: FSMContext):
         return
     await state.update_data(exercise_4_md_90a_date=message.text)
     await state.set_state(RegistrationState.exercise_7_md_90a)
-    await message.answer("🔟 **КБП-7 Ил-76 МД-90А** (ДД.ММ.ГГГГ):")
+    await message.answer("🔟 Упражнение 7 программы 3 КБП (на самолете Ил-76 МД-90А) (ДД.ММ.ГГГГ):")
 
 @dp.message(RegistrationState.exercise_7_md_90a)
 async def reg_ex7_md_90a(message: types.Message, state: FSMContext):
@@ -188,7 +188,7 @@ async def reg_ex7_md_90a(message: types.Message, state: FSMContext):
         return
     await state.update_data(exercise_7_md_90a_date=message.text)
     await state.set_state(RegistrationState.parachute_jump)
-    await message.answer("1️⃣1️⃣ **Дата прыжков с парашютом** (ДД.ММ.ГГГГ) или 'освобожден':")
+    await message.answer("1️⃣1️⃣ Дата прыжков с парашютом (ДД.ММ.ГГГГ) или 'освобожден':")
 
 @dp.message(RegistrationState.parachute_jump)
 async def reg_finish(message: types.Message, state: FSMContext):
@@ -220,10 +220,10 @@ async def reg_finish(message: types.Message, state: FSMContext):
     
     bans = check_flight_ban(user)
     if bans:
-        profile_text += "\n\n🚫 **ПОЛЁТЫ ЗАПРЕЩЕНЫ:**\n" + "\n".join(bans)
+        profile_text += "\n\nПОЛЁТЫ ЗАПРЕЩЕНЫ:\n" + "\n".join(bans)
     
     await message.answer(
-        "✅ **Регистрация завершена!**\n\n" + profile_text,
+        "✅ Регистрация завершена!\n\n" + profile_text,
         reply_markup=get_main_keyboard(is_admin)
     )
 
@@ -238,15 +238,15 @@ async def show_profile(message: types.Message):
     profile_text = generate_profile_text(user)
     bans = check_flight_ban(user)
     if bans:
-        profile_text += "\n\n🚫 **ПОЛЁТЫ ЗАПРЕЩЕНЫ:**\n" + "\n".join(bans)
+        profile_text += "\n\nПОЛЁТЫ ЗАПРЕЩЕНЫ:\n" + "\n".join(bans)
     
     await message.answer(profile_text, reply_markup=get_profile_keyboard())
 
 @dp.message(lambda msg: msg.text == "📚 Полезная информация")
 async def show_info(message: types.Message):
     await message.answer(
-        "📚 **Полезная информация**\n\n"
-        "Введите название **аэродрома** или **города** для поиска контактной информации."
+        "📚 Полезная информация\n\n"
+        "Введите название аэродрома или города для поиска контактной информации."
     )
 
 @dp.message(lambda msg: msg.text == "🛡 Административные функции")
@@ -257,7 +257,7 @@ async def admin_functions(message: types.Message):
         return
     
     await message.answer(
-        "🛡 **Административные функции**",
+        "🛡 Административные функции",
         reply_markup=get_admin_keyboard()
     )
 
@@ -279,7 +279,7 @@ async def back_to_profile(callback: types.CallbackQuery):
 @dp.callback_query(lambda c: c.data == "edit_profile")
 async def edit_profile(callback: types.CallbackQuery):
     await callback.message.edit_text(
-        "✏️ **Редактирование профиля**\n\nВыберите поле:",
+        "✏️ Редактирование профиля\n\nВыберите поле:",
         reply_markup=get_edit_profile_keyboard()
     )
     await callback.answer()
@@ -301,7 +301,7 @@ async def admin_list(callback: types.CallbackQuery):
         await callback.answer()
         return
     
-    text = "📋 **Список пользователей:**\n\n"
+    text = "📋 Список пользователей:\n\n"
     for user in users:
         fio = user[3] or "Не указано"
         rank = user[4] or "Не указано"
@@ -322,7 +322,7 @@ async def admin_stats(callback: types.CallbackQuery):
         if not bans:
             can_fly += 1
     
-    text = f"📊 **Статистика:**\n\n"
+    text = f"📊 Статистика:\n\n"
     text += f"👥 Всего пользователей: {total}\n"
     text += f"✅ Готовы к полётам: {can_fly}\n"
     text += f"🚫 Не могут летать: {total - can_fly}"
@@ -339,7 +339,7 @@ async def admin_fill_airports(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "admin_manage")
 async def admin_manage(callback: types.CallbackQuery):
-    text = "👥 **Управление администраторами**\n\n"
+    text = "👥 Управление администраторами\n\n"
     text += "Выберите действие:\n"
     text += "➕ Добавить админа\n"
     text += "➖ Удалить админа"
