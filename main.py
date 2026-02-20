@@ -7,7 +7,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from config import BOT_TOKEN, GROUP_ID, TOPIC_ID, MAIN_ADMIN_ID, ADMIN_IDS, DB_NAME
 from database import Database
-from validators import is_valid_date, check_parameter_status, generate_profile_text, check_flight_ban, is_exempt
+from validators import is_valid_date, generate_profile_text, check_flight_ban, is_exempt
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
