@@ -5,11 +5,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from config import ADMIN_IDS
-from database import Database
 from validators import is_valid_date, generate_profile_text, check_flight_ban
 
 logger = logging.getLogger(__name__)
-
 router = Router()
 
 class RegistrationState(StatesGroup):
@@ -35,7 +33,7 @@ def get_main_keyboard(is_admin=False):
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 @router.message(Command("start"))
-async def cmd_start(message: types.Message, state: FSMContext, db: Database):
+async def cmd_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     is_admin = user_id in ADMIN_IDS or db.check_admin_status(user_id)
     db.add_user(user_id, message.from_user.username)
@@ -132,7 +130,7 @@ async def reg_ex7_md_90a(message: types.Message, state: FSMContext):
     await message.answer("1️⃣1️⃣ Дата прыжков с парашютом (ДД.ММ.ГГГГ) или 'освобожден':")
 
 @router.message(RegistrationState.parachute_jump)
-async def reg_finish(message: types.Message, state: FSMContext, db: Database):
+async def reg_finish(message: types.Message, state: FSMContext):
     if message.text.lower() in ['освобожден', 'освобождён', 'осв']:
         parachute = 'освобожден'
     elif not is_valid_date(message.text):
