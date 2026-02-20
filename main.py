@@ -23,6 +23,13 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db = Database(DB_NAME)
 
+# 🔍 Передаём db во все роутеры
+from handlers import init_routers
+init_routers(db)
+
+# Импортируем роутеры
+from handlers import registration, menu, profile, admin, search, welcome
+
 # Регистрируем роутеры
 # 🔍 DEBUG: Импорт роутеров
 logging.info("🔍 DEBUG: Начинаем импорт handlers...")
