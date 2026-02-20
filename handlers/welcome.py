@@ -1,6 +1,7 @@
 import logging
-from aiogram import Router, types
+from aiogram import Router, F, types
 from config import TOPIC_ID
+from database import Database
 
 logger = logging.getLogger(__name__)
 router = Router()
