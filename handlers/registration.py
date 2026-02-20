@@ -6,6 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from config import ADMIN_IDS
 from validators import is_valid_date, generate_profile_text, check_flight_ban
+from db_manager import db  # <-- Импортируем db из db_manager
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -33,8 +34,7 @@ def get_main_keyboard(is_admin=False):
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 @router.message(Command("start"))
-async def cmd_start(message: types.Message, state: FSMContext):
-    from main import db
+async def cmd_start(message: types.Message, state: FSMContext):  # <-- БЕЗ db параметра!
     user_id = message.from_user.id
     is_admin = user_id in ADMIN_IDS or db.check_admin_status(user_id)
     db.add_user(user_id, message.from_user.username)
@@ -132,7 +132,6 @@ async def reg_ex7_md_90a(message: types.Message, state: FSMContext):
 
 @router.message(RegistrationState.parachute_jump)
 async def reg_finish(message: types.Message, state: FSMContext):
-    from main import db
     if message.text.lower() in ['освобожден', 'освобождён', 'осв']:
         parachute = 'освобожден'
     elif not is_valid_date(message.text):
