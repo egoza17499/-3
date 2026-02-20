@@ -2,7 +2,6 @@ import logging
 from aiogram import Router, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_IDS
-from database import Database
 from validators import check_flight_ban
 
 logger = logging.getLogger(__name__)
@@ -19,13 +18,15 @@ def get_admin_keyboard():
 
 @router.callback_query(lambda c: c.data == "admin_back")
 async def admin_back(callback: types.CallbackQuery):
+    from main import db
+    is_admin = callback.from_user.id in ADMIN_IDS or db.check_admin_status(callback.from_user.id)
     from handlers.menu import get_main_keyboard
-    is_admin = callback.from_user.id in ADMIN_IDS
     await callback.message.edit_text("Главное меню", reply_markup=get_main_keyboard(is_admin))
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "admin_list")
-async def admin_list(callback: types.CallbackQuery, db: Database):
+async def admin_list(callback: types.CallbackQuery):
+    from main import db
     users = db.get_all_users()
     if not users:
         await callback.message.edit_text("📋 Список пуст")
@@ -40,7 +41,8 @@ async def admin_list(callback: types.CallbackQuery, db: Database):
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "admin_stats")
-async def admin_stats(callback: types.CallbackQuery, db: Database):
+async def admin_stats(callback: types.CallbackQuery):
+    from main import db
     users = db.get_all_users()
     total = len(users)
     can_fly = sum(1 for user in users if not check_flight_ban(user))
