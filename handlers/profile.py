@@ -1,6 +1,8 @@
 import logging
 from aiogram import Router, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from validators import generate_profile_text, check_flight_ban
+from db_manager import db  # <-- Импортируем db из db_manager
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -28,17 +30,14 @@ def get_edit_profile_keyboard():
     ])
 
 @router.callback_query(lambda c: c.data == "back_to_menu")
-async def back_to_menu(callback: types.CallbackQuery):
-    from main import db
+async def back_to_menu(callback: types.CallbackQuery):  # <-- БЕЗ db параметра!
     from handlers.menu import get_main_keyboard
     is_admin = callback.from_user.id in ADMIN_IDS or db.check_admin_status(callback.from_user.id)
     await callback.message.edit_text("Главное меню", reply_markup=get_main_keyboard(is_admin))
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "back_to_profile")
-async def back_to_profile(callback: types.CallbackQuery):
-    from main import db
-    from validators import generate_profile_text, check_flight_ban
+async def back_to_profile(callback: types.CallbackQuery):  # <-- БЕЗ db параметра!
     user = db.get_user(callback.from_user.id)
     if not user:
         await callback.message.edit_text("❌ Сначала пройдите регистрацию (/start)")
