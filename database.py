@@ -43,8 +43,7 @@ class Database:
                 admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER UNIQUE,
                 added_by INTEGER,
-                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (user_id)
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 
@@ -59,7 +58,7 @@ class Database:
 
         self.conn.commit()
 
-    def add_user(self, chat_id, username=None, **kwargs):
+    def add_user(self, chat_id, username=None):
         """Добавление нового пользователя"""
         try:
             self.cursor.execute('''
@@ -156,6 +155,10 @@ class Database:
             WHERE keyword LIKE ?
         ''', (f'%{keyword}%',))
         return self.cursor.fetchall()
+
+    def set_registration_complete(self, chat_id):
+        """Завершение регистрации"""
+        return self.update_user(chat_id, registration_complete=True)
 
     def close(self):
         """Закрытие подключения"""
