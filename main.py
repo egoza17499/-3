@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import time
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -17,7 +18,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 db = Database(DB_NAME)
 
-# Машина состояний для регистрации
+# Машина состояний
 class RegistrationState(StatesGroup):
     fio = State()
     rank = State()
@@ -62,41 +63,30 @@ async def cmd_start(message: types.Message, state: FSMContext):
     )
     await state.clear()
 
-# Обработка кнопки "Мой профиль"
 @dp.message(lambda msg: msg.text == "👤 Мой профиль")
 async def show_profile(message: types.Message):
-    user_id = message.from_user.id
     await message.answer("📋 Ваш профиль:\n\nЗдесь будет информация о пользователе")
 
-# Обработка кнопки "Полезная информация"
 @dp.message(lambda msg: msg.text == "📚 Полезная информация")
 async def show_info(message: types.Message):
     await message.answer(
         "📚 **Полезная информация**\n\n"
-        "Введите название аэродрома или города для поиска контактной информации."
+        "Введите название аэродрома или города для поиска."
     )
 
-# Обработка кнопки "Административные функции"
 @dp.message(lambda msg: msg.text == "🛡 Административные функции")
 async def admin_functions(message: types.Message):
     user_id = message.from_user.id
     if user_id not in ADMIN_IDS and not db.check_admin_status(user_id):
-        await message.answer("❌ У вас нет доступа к административным функциям")
+        await message.answer("❌ Нет доступа")
         return
-    
-    await message.answer(
-        "🛡 **Административные функции**",
-        reply_markup=get_admin_keyboard()
-    )
+    await message.answer("🛡 **Административные функции**", reply_markup=get_admin_keyboard())
 
 # Callback handlers
 @dp.callback_query(lambda c: c.data == "admin_back")
 async def admin_back(callback: types.CallbackQuery):
     is_admin = callback.from_user.id in ADMIN_IDS
-    await callback.message.edit_text(
-        "Главное меню",
-        reply_markup=get_main_keyboard(is_admin)
-    )
+    await callback.message.edit_text("Главное меню", reply_markup=get_main_keyboard(is_admin))
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_list")
@@ -111,31 +101,40 @@ async def admin_list(callback: types.CallbackQuery):
 @dp.callback_query(lambda c: c.data == "admin_stats")
 async def admin_stats(callback: types.CallbackQuery):
     users = db.get_all_users()
-    total = len(users)
-    text = f"📊 **Статистика:**\n\n"
-    text += f"Всего пользователей: {total}\n"
+    text = f"📊 **Статистика:**\n\nВсего пользователей: {len(users)}"
     await callback.message.edit_text(text)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "admin_manage")
 async def admin_manage(callback: types.CallbackQuery):
     text = "👥 **Управление администраторами**\n\n"
-    text += "Выберите действие:\n"
-    text += "➕ Добавить админа\n"
-    text += "➖ Удалить админа"
+    text += "➕ Добавить админа\n➖ Удалить админа"
     await callback.message.edit_text(text)
     await callback.answer()
 
 # Запуск бота
 async def main():
     logging.info("🚀 Запуск бота...")
+    
     try:
-        # Очищаем webhook на всякий случай
-        await bot.delete_webhook()
+        # Ждём немного чтобы старые экземпляры успели остановиться
+        await asyncio.sleep(2)
         
-        # Запускаем polling с правильными настройками
+        # Принудительно удаляем webhook
+        logging.info("🔄 Удаляем webhook...")
+        await bot.delete_webhook(drop_pending_updates=True)
+        
+        # Ждём ещё немного
+        await asyncio.sleep(1)
+        
+        # Запускаем polling
+        logging.info("✅ Запускаем polling...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        
+    except Exception as e:
+        logging.error(f"❌ Ошибка запуска: {e}")
     finally:
+        logging.info("🛑 Остановка бота...")
         await bot.session.close()
         if db:
             db.close()
