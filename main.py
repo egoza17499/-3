@@ -7,7 +7,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from config import BOT_TOKEN, GROUP_ID, TOPIC_ID, MAIN_ADMIN_ID, ADMIN_IDS, DB_NAME
 from database import Database
-from validators import is_valid_date, check_parameter_status, generate_profile_text, check_flight_ban
+from validators import is_valid_date, check_parameter_status, generate_profile_text, check_flight_ban, is_exempt
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -188,17 +188,22 @@ async def reg_ex7_md_90a(message: types.Message, state: FSMContext):
         return
     await state.update_data(exercise_7_md_90a_date=message.text)
     await state.set_state(RegistrationState.parachute_jump)
-    await message.answer("1️⃣1️⃣ **Дата прыжков с парашютом** (ДД.ММ.ГГГГ):")
+    await message.answer("1️⃣1️⃣ **Дата прыжков с парашютом** (ДД.ММ.ГГГГ) или 'освобожден':")
 
 @dp.message(RegistrationState.parachute_jump)
 async def reg_finish(message: types.Message, state: FSMContext):
-    if not is_valid_date(message.text):
-        await message.answer("❌ Неверный формат!")
+    # Проверяем на "освобожден"
+    if message.text.lower() in ['освобожден', 'освобождён', 'осв']:
+        parachute = 'освобожден'
+    elif not is_valid_date(message.text):
+        await message.answer("❌ Неверный формат! Используйте: ДД.ММ.ГГГГ или 'освобожден'")
         return
+    else:
+        parachute = message.text
     
     # Получаем все данные
     data = await state.get_data()
-    data['parachute_jump_date'] = message.text
+    data['parachute_jump_date'] = parachute
     
     # Сохраняем в БД
     chat_id = message.from_user.id
@@ -328,8 +333,7 @@ async def admin_stats(callback: types.CallbackQuery):
 @dp.callback_query(lambda c: c.data == "admin_fill_airports")
 async def admin_fill_airports(callback: types.CallbackQuery):
     await callback.message.edit_text("⏳ Заполняю базу аэродромов...")
-    
-    # Здесь будет код заполнения базы (добавим позже)
+    # Здесь будет код заполнения базы
     await callback.message.edit_text("✅ База заполнена!")
     await callback.answer()
 
@@ -372,4 +376,4 @@ async def main():
             db.close()
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())
