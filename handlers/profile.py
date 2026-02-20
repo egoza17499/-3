@@ -6,6 +6,7 @@ from database import Database
 
 logger = logging.getLogger(__name__)
 router = Router()
+db = Database('bot_database.db')
 
 def get_profile_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
