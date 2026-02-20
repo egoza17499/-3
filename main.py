@@ -24,12 +24,100 @@ dp = Dispatcher()
 db = Database(DB_NAME)
 
 # Регистрируем роутеры
-dp.include_router(registration.router)
-dp.include_router(menu.router)
-dp.include_router(profile.router)
-dp.include_router(admin.router)
-dp.include_router(search.router)
-dp.include_router(welcome.router)
+# 🔍 DEBUG: Импорт роутеров
+logging.info("🔍 DEBUG: Начинаем импорт handlers...")
+print("🔍 DEBUG: Начинаем импорт handlers...")
+
+try:
+    from handlers import registration
+    logging.info("✅ registration импортирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка импорта registration: {e}")
+    raise
+
+try:
+    from handlers import menu
+    logging.info("✅ menu импортирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка импорта menu: {e}")
+    raise
+
+try:
+    from handlers import profile
+    logging.info("✅ profile импортирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка импорта profile: {e}")
+    raise
+
+try:
+    from handlers import admin
+    logging.info("✅ admin импортирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка импорта admin: {e}")
+    raise
+
+try:
+    from handlers import search
+    logging.info("✅ search импортирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка импорта search: {e}")
+    raise
+
+try:
+    from handlers import welcome
+    logging.info("✅ welcome импортирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка импорта welcome: {e}")
+    raise
+
+logging.info("✅ Все handlers импортированы успешно!")
+
+# 🔍 DEBUG: Регистрация роутеров
+logging.info("🔍 DEBUG: Начинаем регистрацию роутеров...")
+
+try:
+    dp.include_router(registration.router)
+    logging.info("✅ registration зарегистрирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка регистрации registration: {e}")
+    raise
+
+try:
+    dp.include_router(menu.router)
+    logging.info("✅ menu зарегистрирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка регистрации menu: {e}")
+    raise
+
+try:
+    dp.include_router(profile.router)
+    logging.info("✅ profile зарегистрирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка регистрации profile: {e}")
+    raise
+
+try:
+    dp.include_router(admin.router)
+    logging.info("✅ admin зарегистрирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка регистрации admin: {e}")
+    raise
+
+try:
+    dp.include_router(search.router)
+    logging.info("✅ search зарегистрирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка регистрации search: {e}")
+    raise
+
+try:
+    dp.include_router(welcome.router)
+    logging.info("✅ welcome зарегистрирован")
+except Exception as e:
+    logging.error(f"❌ Ошибка регистрации welcome: {e}")
+    raise
+
+logging.info("✅ Все роутеры зарегистрированы успешно!")
 
 async def main():
     """Основная функция запуска бота"""
