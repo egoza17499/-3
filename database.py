@@ -1,46 +1,74 @@
 import sqlite3
 
 class Database:
-    def __init__(self, db_name='user_data.db'):
-        self.connection = sqlite3.connect(db_name)
-        self.cursor = self.connection.cursor()
+    def __init__(self, db_name):
+        self.conn = sqlite3.connect(db_name)
+        self.cursor = self.conn.cursor()
+        self.create_tables()
 
-    def create_table(self):
+    def create_tables(self):
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER UNIQUE,
+            last_name TEXT,
+            first_name TEXT,
+            patronymic TEXT,
+            rank TEXT,
+            qualification TEXT,
+            leave_start_date TEXT,
+            leave_end_date TEXT,
+            vlk_date TEXT,
+            umo_date TEXT,
+            exercise_4_md_m_date TEXT,
+            exercise_7_md_m_date TEXT,
+            exercise_4_md_90a_date TEXT,
+            exercise_7_md_90a_date TEXT,
+            parachute_jump_date TEXT,
+            registration_complete BOOLEAN
         )''')
-        self.connection.commit()
 
-    def add_user(self, username, email):
-        self.cursor.execute('INSERT INTO users (username, email) VALUES (?, ?)', (username, email))
-        self.connection.commit()
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS admins (
+            admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users (user_id)
+        )''')
 
-    def get_user(self, user_id):
-        self.cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
-        return self.cursor.fetchone()
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS aerodromes (
+            aerodrome_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            location TEXT
+        )''')
 
-    def update_user(self, user_id, username=None, email=None):
-        if username:
-            self.cursor.execute('UPDATE users SET username = ? WHERE id = ?', (username, user_id))
-        if email:
-            self.cursor.execute('UPDATE users SET email = ? WHERE id = ?', (email, user_id))
-        self.connection.commit()
+        self.conn.commit()
 
-    def delete_user(self, user_id):
-        self.cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
-        self.connection.commit()
+    def add_user(self, chat_id, last_name, first_name, patronymic, rank, qualification, leave_start_date, leave_end_date, vlk_date, umo_date, exercise_4_md_m_date, exercise_7_md_m_date, exercise_4_md_90a_date, exercise_7_md_90a_date, parachute_jump_date, registration_complete):
+        self.cursor.execute('''INSERT INTO users (chat_id, last_name, first_name, patronymic, rank, qualification, leave_start_date, leave_end_date, vlk_date, umo_date, exercise_4_md_m_date, exercise_7_md_m_date, exercise_4_md_90a_date, exercise_7_md_90a_date, parachute_jump_date, registration_complete) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (chat_id, last_name, first_name, patronymic, rank, qualification, leave_start_date, leave_end_date, vlk_date, umo_date, exercise_4_md_m_date, exercise_7_md_m_date, exercise_4_md_90a_date, exercise_7_md_90a_date, parachute_jump_date, registration_complete))
+        self.conn.commit()
+
+    def update_user(self, user_id, **fields):
+        set_clause = ', '.join(f'{key} = ?' for key in fields)
+        self.cursor.execute(f'UPDATE users SET {set_clause} WHERE user_id = ?', (*fields.values(), user_id))
+        self.conn.commit()
+
+    def check_admin_status(self, user_id):
+        self.cursor.execute('SELECT * FROM admins WHERE user_id = ?', (user_id,))
+        return self.cursor.fetchone() is not None
+
+    def get_all_users(self):
+        self.cursor.execute('SELECT * FROM users')
+        return self.cursor.fetchall()
+
+    def search_users_by_last_name(self, last_name):
+        self.cursor.execute('SELECT * FROM users WHERE last_name = ?', (last_name,))
+        return self.cursor.fetchall()
+
+    def search_aerodromes(self, name):
+        self.cursor.execute('SELECT * FROM aerodromes WHERE name LIKE ?', (f'%{name}%',))
+        return self.cursor.fetchall()
 
     def close(self):
-        self.connection.close()
+        self.conn.close()
 
-# Example usage (uncomment to run)
-# db = Database()
-# db.create_table()
-# db.add_user('john_doe', 'john@example.com')
-# print(db.get_user(1))
-# db.update_user(1, email='john_doe@example.com')
-# db.delete_user(1)
-# db.close()
+# Usage example
+# db = Database('database.db')
+# db.add_user(chat_id=1, last_name='Doe', first_name='John', patronymic='J.', rank='Captain', qualification='Pilot', leave_start_date='2026-01-01', leave_end_date='2026-01-10', vlk_date='2026-01-05', umo_date='2026-01-06', exercise_4_md_m_date='2026-01-07', exercise_7_md_m_date='2026-01-08', exercise_4_md_90a_date='2026-01-09', exercise_7_md_90a_date='2026-01-10', parachute_jump_date='2026-01-11', registration_complete=True)
