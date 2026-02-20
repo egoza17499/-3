@@ -7,6 +7,7 @@ from validators import check_flight_ban
 
 logger = logging.getLogger(__name__)
 router = Router()
+db = Database('bot_database.db')
 
 def get_admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
