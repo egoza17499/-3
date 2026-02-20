@@ -80,22 +80,23 @@ async def main():
                     logging.error(f"❌ Ошибка heartbeat: {e}")
                 await asyncio.sleep(30)
         
-        # Запускаем heartbeat в фоне
+               # Запускаем heartbeat в фоне
         heartbeat_future = asyncio.create_task(heartbeat_task())
         
         # Запускаем polling
-logging.info("✅ Запускаем polling...")
-logging.info(f"📊 Registered routers: {[r.__name__ if hasattr(r, '__name__') else str(r) for r in dp.sub_routers]}")
-try:
-   # Тестовый лог перед polling
-logging.info("🔍 DEBUG: Перед запуском polling")
-print("🔍 DEBUG: Перед запуском polling")  # Дублируем в stdout
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-except Exception as e:
-    logging.error(f"❌ Ошибка polling: {e}")
-    import traceback
-    traceback.print_exc()
-    raise
+        logging.info("✅ Запускаем polling...")
+        
+        # 🔍 DEBUG: Тестовый лог перед polling
+        logging.info("🔍 DEBUG: Перед запуском polling")
+        print("🔍 DEBUG: Перед запуском polling")
+        
+        try:
+            await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        except Exception as e:
+            logging.error(f"❌ Ошибка polling: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         
         # Отменяем heartbeat при остановке
         heartbeat_future.cancel()
