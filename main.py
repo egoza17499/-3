@@ -1,10 +1,11 @@
 import logging
+import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from config import BOT_TOKEN, GROUP_ID, TOPIC_ID, MAIN_ADMIN_ID, ADMIN_IDS
+from config import BOT_TOKEN, GROUP_ID, TOPIC_ID, MAIN_ADMIN_ID, ADMIN_IDS, DB_NAME
 from database import Database
 from validators import is_valid_date, check_parameter_status
 
@@ -14,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-db = Database('bot_database.db')
+db = Database(DB_NAME)
 
 # Машина состояний для регистрации
 class RegistrationState(StatesGroup):
@@ -49,27 +50,17 @@ def get_admin_keyboard():
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-def get_profile_edit_keyboard():
-    keyboard = [
-        [InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_profile")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_menu")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
 # Команда /start
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message):
+async def cmd_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     is_admin = user_id in ADMIN_IDS or db.check_admin_status(user_id)
-    
-    # Проверяем, зарегистрирован ли пользователь
-    # Здесь должна быть логика проверки регистрации
-    # Для простоты пока просто показываем меню
     
     await message.answer(
         f"👋 Добро пожаловать, {message.from_user.full_name}!",
         reply_markup=get_main_keyboard(is_admin)
     )
+    await state.clear()
 
 # Обработка кнопки "Мой профиль"
 @dp.message(lambda msg: msg.text == "👤 Мой профиль")
@@ -114,7 +105,7 @@ async def admin_list(callback: types.CallbackQuery):
     users = db.get_all_users()
     text = "📋 **Список пользователей:**\n\n"
     for user in users:
-        text += f"• {user[2]} {user[3]} {user[4]}\n"  # last_name, first_name, patronymic
+        text += f"• {user[2]} {user[3]} {user[4]}\n"
     await callback.message.edit_text(text)
     await callback.answer()
 
@@ -124,7 +115,6 @@ async def admin_stats(callback: types.CallbackQuery):
     total = len(users)
     text = f"📊 **Статистика:**\n\n"
     text += f"Всего пользователей: {total}\n"
-    # Здесь можно добавить дополнительную статистику
     await callback.message.edit_text(text)
     await callback.answer()
 
@@ -139,9 +129,12 @@ async def admin_manage(callback: types.CallbackQuery):
 
 # Запуск бота
 async def main():
-    logging.info("Запуск бота...")
-    await dp.start_polling(bot)
+    logging.info("🚀 Запуск бота...")
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+        db.close()
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
