@@ -357,47 +357,67 @@ async def group_welcome_handler(message: types.Message):
     except Exception as e:
         logging.error(f"Ошибка отправки приветствия: {e}")
 
-# Запуск бота
+# ============================================================================
+# БЛОК 6: ЗАПУСК С БЛОКИРОВКОЙ
+# ============================================================================
+
 async def main():
-    logging.info("🚀 Запуск бота...")
+    instance_id = f"instance_{os.getpid()}_{int(time.time())}"
+    logging.info(f"🤖 Запуск экземпляра: {instance_id}")
+    
+    # Проверяем текущий статус блокировки
+    lock_status = db.check_lock_status()
+    if lock_status:
+        logging.info(f"📊 Текущая блокировка: {lock_status['instance_id']}")
+    
+    # Пытаемся захватить блокировку
+    logging.info("🔒 Попытка захвата блокировки...")
+    if not db.check_and_acquire_lock(instance_id):
+        logging.error("❌ Не удалось захватить блокировку! Другой экземпляр уже работает.")
+        return
+    
+    logging.info("✅ Блокировка успешно захвачена!")
     
     try:
-        # Принудительная очистка webhook (несколько попыток)
-        logging.info("🔄 Принудительная очистка webhook...")
-        for attempt in range(5):
+        # Очистка webhook
+        logging.info("🔄 Очистка webhook...")
+        for attempt in range(3):
             try:
-                logging.info(f"Попытка {attempt + 1}/5: Удаление webhook...")
                 await bot.delete_webhook(drop_pending_updates=True)
-                logging.info(f"✅ Попытка {attempt + 1} успешна")
-                await asyncio.sleep(3)
+                logging.info(f"✅ Webhook удалён (попытка {attempt + 1})")
+                await asyncio.sleep(2)
+                break
             except Exception as e:
                 logging.warning(f"⚠️ Попытка {attempt + 1} не удалась: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)
         
-        # Дополнительная задержка чтобы старые экземпляры точно остановились
-        logging.info("⏳ Дополнительное ожидание (10 сек)...")
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
         
-        # Финальная проверка
-        try:
-            webhook_info = await bot.get_webhook_info()
-            logging.info(f"📊 Webhook URL: {webhook_info.url or 'не установлен'}")
-        except Exception as e:
-            logging.warning(f"⚠️ Не удалось получить информацию о webhook: {e}")
+        # Heartbeat задача
+        async def heartbeat_task():
+            while True:
+                try:
+                    db.update_heartbeat(instance_id)
+                except Exception as e:
+                    logging.error(f"❌ Ошибка heartbeat: {e}")
+                await asyncio.sleep(30)
         
-        # Запускаем polling
+        heartbeat_future = asyncio.create_task(heartbeat_task())
+        
         logging.info("✅ Запускаем polling...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        heartbeat_future.cancel()
         
     except Exception as e:
-        logging.error(f"❌ Ошибка запуска: {e}")
+        logging.error(f"❌ Ошибка в main: {e}")
         import traceback
         traceback.print_exc()
     finally:
         logging.info("🛑 Остановка бота...")
+        db.release_lock(instance_id)
         await bot.session.close()
-        if db:
-            db.close()
+        db.close()
+        logging.info("✅ Бот полностью остановлен")
 
 if __name__ == "__main__":
     asyncio.run(main())
