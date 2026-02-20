@@ -35,6 +35,22 @@ def calculate_days_remaining(date_string):
     except ValueError:
         return -999
 
+def get_status_text(days_remaining, is_vacation=False):
+    """Формирование текста статуса"""
+    if days_remaining == -999:
+        return "Не указано"
+    elif days_remaining == 9999:
+        return "Освобожден"
+    elif days_remaining < 0:
+        return f"Просрочено на {abs(days_remaining)} дн."
+    elif days_remaining == 0:
+        return "Истекает сегодня"
+    else:
+        if is_vacation:
+            return f"Действует (осталось {days_remaining} дн.)"
+        else:
+            return f"Действует (осталось {days_remaining} дн.)"
+
 def get_status_color(days_remaining):
     """Определение статуса по количеству дней"""
     if days_remaining == -999:
@@ -48,13 +64,12 @@ def get_status_color(days_remaining):
     else:
         return "🔴"  # Красный - истекло
 
-def check_parameter_status(param_name, date_string, is_parachute=False):
-    """Проверка статуса параметра"""
+def format_date_with_status(date_string, is_vacation=False):
+    """Форматирование даты со статусом"""
     if not date_string:
         return "⚪ Не указано"
     
-    # Специальная обработка для прыжков
-    if is_parachute and is_exempt(date_string):
+    if is_exempt(date_string):
         return "⚪ Освобожден"
     
     if not is_valid_date(date_string):
@@ -62,17 +77,9 @@ def check_parameter_status(param_name, date_string, is_parachute=False):
     
     days = calculate_days_remaining(date_string)
     color = get_status_color(days)
+    status_text = get_status_text(days, is_vacation)
     
-    if days == 9999:
-        return f"{color} Освобожден"
-    elif days == -999:
-        return f"{color} Нет данных"
-    elif days < 0:
-        return f"{color} Истекло {abs(days)} дней назад"
-    elif days == 0:
-        return f"{color} Истекает сегодня"
-    else:
-        return f"{color} {days} дней"
+    return f"{color} {date_string} ({status_text})"
 
 def generate_profile_text(user_data):
     """Генерация текста профиля пользователя"""
@@ -94,28 +101,70 @@ def generate_profile_text(user_data):
     parachute = user_data[14]
     leave_end = user_data[7]
     
-    text = f"👤 **{fio}**\n"
-    text += f"🔹 Звание: {rank}\n"
-    text += f"🔹 Квалификация: {qualification}\n\n"
+    text = f"**{fio}**\n"
+    text += f"🎖 Воинское звание: {rank}\n"
+    text += f"⭐ Квалификация: {qualification}\n\n"
     
-    text += f"📋 **Сроки:**\n"
-    text += f"{check_parameter_status('ВЛК', vlk_date)}\n"
-    text += f"{check_parameter_status('УМО', umo_date)}\n"
-    text += f"{check_parameter_status('КБП-4 МД-М', ex4_md_m)}\n"
-    text += f"{check_parameter_status('КБП-7 МД-М', ex7_md_m)}\n"
-    text += f"{check_parameter_status('КБП-4 МД-90А', ex4_md_90a)}\n"
-    text += f"{check_parameter_status('КБП-7 МД-90А', ex7_md_90a)}\n"
-    text += f"{check_parameter_status('Прыжки', parachute, is_parachute=True)}\n"
+    text += f"**Сроки:**\n"
     
+    # Отпуск
     if leave_end:
         days = calculate_days_remaining(leave_end)
-        if days > 0 and days != 9999:
-            text += f"\n🏖 **Отпуск:** {check_parameter_status('Отпуск', leave_end)}"
+        if days != -999 and days != 9999:
+            status = get_status_text(days, is_vacation=True)
+            color = get_status_color(days)
+            text += f"{color} Отпуск (конец): {leave_end} ({status})\n"
+    
+    # ВЛК
+    text += f"{format_date_with_status(vlk_date)}\n" if vlk_date else "⚪ ВЛК: Не указано\n"
+    
+    # УМО
+    text += f"{format_date_with_status(umo_date)}\n" if umo_date else "⚪ УМО: Не указано\n"
+    
+    # КБП-4 МД-М
+    if ex4_md_m:
+        days = calculate_days_remaining(ex4_md_m)
+        status = get_status_text(days)
+        color = get_status_color(days)
+        text += f"{color} Упражнение 4 программы 3 КБП (на самолете Ил-76 МД-М): {ex4_md_m} ({status})\n"
+    
+    # КБП-7 МД-М
+    if ex7_md_m:
+        days = calculate_days_remaining(ex7_md_m)
+        status = get_status_text(days)
+        color = get_status_color(days)
+        text += f"{color} Упражнение 7 программы 3 КБП (на самолете Ил-76 МД-М): {ex7_md_m} ({status})\n"
+    
+    # КБП-4 МД-90А
+    if ex4_md_90a:
+        days = calculate_days_remaining(ex4_md_90a)
+        status = get_status_text(days)
+        color = get_status_color(days)
+        text += f"{color} Упражнение 4 программы 3 КБП (на самолете Ил-76 МД-90А): {ex4_md_90a} ({status})\n"
+    
+    # КБП-7 МД-90А
+    if ex7_md_90a:
+        days = calculate_days_remaining(ex7_md_90a)
+        status = get_status_text(days)
+        color = get_status_color(days)
+        text += f"{color} Упражнение 7 программы 3 КБП (на самолете Ил-76 МД-90А): {ex7_md_90a} ({status})\n"
+    
+    # Прыжки с парашютом
+    if parachute:
+        if is_exempt(parachute):
+            text += "⚪ Прыжки с парашютом: Освобожден\n"
+        elif is_valid_date(parachute):
+            days = calculate_days_remaining(parachute)
+            status = get_status_text(days)
+            color = get_status_color(days)
+            text += f"{color} Прыжки с парашютом: {parachute} ({status})\n"
+        else:
+            text += "🔴 Прыжки с парашютом: Некорректная дата\n"
     
     # Проверка на запрет полётов
     bans = check_flight_ban(user_data)
     if bans:
-        text += "\n\n🚫 **ПОЛЁТЫ ЗАПРЕЩЕНЫ:**\n"
+        text += "\n**ПОЛЁТЫ ЗАПРЕЩЕНЫ:**\n"
         text += "\n".join(bans)
     
     return text
@@ -148,23 +197,30 @@ def check_flight_ban(user_data):
     if days_umo < 0:
         bans.append("🔴 УМО истекло")
     
-    # Проверка КБП
-    if calculate_days_remaining(ex4_md_m) < 0:
-        bans.append("🔴 КБП-4 МД-М истекло")
+    # Проверка КБП-4 МД-М
+    days_ex4_md_m = calculate_days_remaining(ex4_md_m)
+    if days_ex4_md_m < 0:
+        bans.append("🔴 Упражнение 4 (Ил-76 МД-М) истекло")
     
-    if calculate_days_remaining(ex7_md_m) < 0:
-        bans.append("🔴 КБП-7 МД-М истекло")
+    # Проверка КБП-7 МД-М
+    days_ex7_md_m = calculate_days_remaining(ex7_md_m)
+    if days_ex7_md_m < 0:
+        bans.append("🔴 Упражнение 7 (Ил-76 МД-М) истекло")
     
-    if calculate_days_remaining(ex4_md_90a) < 0:
-        bans.append("🔴 КБП-4 МД-90А истекло")
+    # Проверка КБП-4 МД-90А
+    days_ex4_md_90a = calculate_days_remaining(ex4_md_90a)
+    if days_ex4_md_90a < 0:
+        bans.append("🔴 Упражнение 4 (Ил-76 МД-90А) истекло")
     
-    if calculate_days_remaining(ex7_md_90a) < 0:
-        bans.append("🔴 КБП-7 МД-90А истекло")
+    # Проверка КБП-7 МД-90А
+    days_ex7_md_90a = calculate_days_remaining(ex7_md_90a)
+    if days_ex7_md_90a < 0:
+        bans.append("🔴 Упражнение 7 (Ил-76 МД-90А) истекло")
     
     # Прыжки НЕ влияют если освобожден
     if not is_exempt(parachute):
         days_parachute = calculate_days_remaining(parachute)
         if days_parachute < 0:
-            bans.append("🔴 Прыжки истекли")
+            bans.append("🔴 Прыжки с парашютом истекли")
     
     return bans
