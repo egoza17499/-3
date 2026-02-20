@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# ИНИЦИАЛИЗАЦИЯ (на уровне модуля - это нормально для aiogram)
+# ИНИЦИАЛИЗАЦИЯ (на уровне модуля)
 # ============================================================================
 
 bot = Bot(token=BOT_TOKEN)
@@ -34,11 +34,6 @@ def setup_routers():
     
     # Импортируем роутеры
     from handlers import registration, menu, profile, admin, search, welcome
-    
-    # Передаём db во все роутеры (если они его используют)
-    for module in [registration, menu, profile, admin, search, welcome]:
-        if hasattr(module, 'db'):
-            module.db = db
     
     # Регистрируем роутеры в диспетчере
     dp.include_router(registration.router)
@@ -118,9 +113,6 @@ async def main():
         
         # Запуск polling
         logger.info("✅ Запускаем polling...")
-        logger.info("🔍 DEBUG: Перед start_polling")
-        print("🔍 DEBUG: Перед start_polling")
-        
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
         
         heartbeat_future.cancel()
