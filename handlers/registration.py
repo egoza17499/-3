@@ -11,7 +11,6 @@ from validators import is_valid_date, generate_profile_text, check_flight_ban
 logger = logging.getLogger(__name__)
 
 router = Router()
-db = Database('bot_database.db')
 
 class RegistrationState(StatesGroup):
     fio = State()
