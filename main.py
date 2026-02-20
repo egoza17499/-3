@@ -66,7 +66,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
 @dp.message(lambda msg: msg.text == "👤 Мой профиль")
 async def show_profile(message: types.Message):
     user_id = message.from_user.id
-    # Здесь будет логика получения данных из БД
     await message.answer("📋 Ваш профиль:\n\nЗдесь будет информация о пользователе")
 
 # Обработка кнопки "Полезная информация"
@@ -131,10 +130,15 @@ async def admin_manage(callback: types.CallbackQuery):
 async def main():
     logging.info("🚀 Запуск бота...")
     try:
-        await dp.start_polling(bot)
+        # Очищаем webhook на всякий случай
+        await bot.delete_webhook()
+        
+        # Запускаем polling с правильными настройками
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         await bot.session.close()
-        db.close()
+        if db:
+            db.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
