@@ -84,8 +84,15 @@ async def main():
         heartbeat_future = asyncio.create_task(heartbeat_task())
         
         # Запускаем polling
-        logging.info("✅ Запускаем polling...")
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+logging.info("✅ Запускаем polling...")
+logging.info(f"📊 Registered routers: {[r.__name__ if hasattr(r, '__name__') else str(r) for r in dp.sub_routers]}")
+try:
+    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+except Exception as e:
+    logging.error(f"❌ Ошибка polling: {e}")
+    import traceback
+    traceback.print_exc()
+    raise
         
         # Отменяем heartbeat при остановке
         heartbeat_future.cancel()
