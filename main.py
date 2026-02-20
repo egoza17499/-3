@@ -1,143 +1,166 @@
-import logging
-import asyncio
-import time
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from config import BOT_TOKEN, GROUP_ID, TOPIC_ID, MAIN_ADMIN_ID, ADMIN_IDS, DB_NAME
-from database import Database
-from validators import is_valid_date, check_parameter_status
+import sqlite3
+from datetime import datetime
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
+class Database:
+    def __init__(self, db_name):
+        self.db_name = db_name
+        self.conn = None
+        self.cursor = None
+        self.connect()
+        self.create_tables()
 
-# Инициализация бота и диспетчера
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-db = Database(DB_NAME)
+    def connect(self):
+        """Подключение к базе данных"""
+        self.conn = sqlite3.connect(self.db_name, check_same_thread=False)
+        self.cursor = self.conn.cursor()
 
-# Машина состояний
-class RegistrationState(StatesGroup):
-    fio = State()
-    rank = State()
-    qualification = State()
-    leave_dates = State()
-    vlk_date = State()
-    umo_date = State()
-    exercise_4_md_m = State()
-    exercise_7_md_m = State()
-    exercise_4_md_90a = State()
-    exercise_7_md_90a = State()
-    parachute_jump = State()
+    def create_tables(self):
+        """Создание таблиц"""
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER UNIQUE,
+                username TEXT,
+                fio TEXT,
+                rank TEXT,
+                qualification TEXT,
+                leave_start_date TEXT,
+                leave_end_date TEXT,
+                vlk_date TEXT,
+                umo_date TEXT,
+                exercise_4_md_m_date TEXT,
+                exercise_7_md_m_date TEXT,
+                exercise_4_md_90a_date TEXT,
+                exercise_7_md_90a_date TEXT,
+                parachute_jump_date TEXT,
+                registration_complete BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
 
-# Клавиатуры
-def get_main_keyboard(is_admin=False):
-    keyboard = [
-        [KeyboardButton(text="👤 Мой профиль")],
-        [KeyboardButton(text="📚 Полезная информация")]
-    ]
-    if is_admin:
-        keyboard.append([KeyboardButton(text="🛡 Административные функции")])
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS admins (
+                admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER UNIQUE,
+                added_by INTEGER,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
 
-def get_admin_keyboard():
-    keyboard = [
-        [InlineKeyboardButton(text="📋 Список пользователей", callback_data="admin_list")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="👥 Управление админами", callback_data="admin_manage")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS aerodromes (
+                aerodrome_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                keyword TEXT,
+                content TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
 
-# Команда /start
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    is_admin = user_id in ADMIN_IDS or db.check_admin_status(user_id)
-    
-    await message.answer(
-        f"👋 Добро пожаловать, {message.from_user.full_name}!",
-        reply_markup=get_main_keyboard(is_admin)
-    )
-    await state.clear()
+        self.conn.commit()
 
-@dp.message(lambda msg: msg.text == "👤 Мой профиль")
-async def show_profile(message: types.Message):
-    await message.answer("📋 Ваш профиль:\n\nЗдесь будет информация о пользователе")
+    def add_user(self, chat_id, username=None):
+        """Добавление нового пользователя"""
+        try:
+            self.cursor.execute('''
+                INSERT INTO users (chat_id, username) VALUES (?, ?)
+                ON CONFLICT(chat_id) DO NOTHING
+            ''', (chat_id, username))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка добавления пользователя: {e}")
+            return False
 
-@dp.message(lambda msg: msg.text == "📚 Полезная информация")
-async def show_info(message: types.Message):
-    await message.answer(
-        "📚 **Полезная информация**\n\n"
-        "Введите название аэродрома или города для поиска."
-    )
-
-@dp.message(lambda msg: msg.text == "🛡 Административные функции")
-async def admin_functions(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in ADMIN_IDS and not db.check_admin_status(user_id):
-        await message.answer("❌ Нет доступа")
-        return
-    await message.answer("🛡 **Административные функции**", reply_markup=get_admin_keyboard())
-
-# Callback handlers
-@dp.callback_query(lambda c: c.data == "admin_back")
-async def admin_back(callback: types.CallbackQuery):
-    is_admin = callback.from_user.id in ADMIN_IDS
-    await callback.message.edit_text("Главное меню", reply_markup=get_main_keyboard(is_admin))
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data == "admin_list")
-async def admin_list(callback: types.CallbackQuery):
-    users = db.get_all_users()
-    text = "📋 **Список пользователей:**\n\n"
-    for user in users:
-        text += f"• {user[2]} {user[3]} {user[4]}\n"
-    await callback.message.edit_text(text)
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data == "admin_stats")
-async def admin_stats(callback: types.CallbackQuery):
-    users = db.get_all_users()
-    text = f"📊 **Статистика:**\n\nВсего пользователей: {len(users)}"
-    await callback.message.edit_text(text)
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data == "admin_manage")
-async def admin_manage(callback: types.CallbackQuery):
-    text = "👥 **Управление администраторами**\n\n"
-    text += "➕ Добавить админа\n➖ Удалить админа"
-    await callback.message.edit_text(text)
-    await callback.answer()
-
-# Запуск бота
-async def main():
-    logging.info("🚀 Запуск бота...")
-    
-    try:
-        # Ждём немного чтобы старые экземпляры успели остановиться
-        await asyncio.sleep(2)
+    def update_user(self, chat_id, **fields):
+        """Обновление данных пользователя"""
+        if not fields:
+            return False
         
-        # Принудительно удаляем webhook
-        logging.info("🔄 Удаляем webhook...")
-        await bot.delete_webhook(drop_pending_updates=True)
+        set_clause = ', '.join(f'{key} = ?' for key in fields.keys())
+        values = list(fields.values())
+        values.append(chat_id)
         
-        # Ждём ещё немного
-        await asyncio.sleep(1)
-        
-        # Запускаем polling
-        logging.info("✅ Запускаем polling...")
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-        
-    except Exception as e:
-        logging.error(f"❌ Ошибка запуска: {e}")
-    finally:
-        logging.info("🛑 Остановка бота...")
-        await bot.session.close()
-        if db:
-            db.close()
+        try:
+            self.cursor.execute(f'''
+                UPDATE users SET {set_clause} WHERE chat_id = ?
+            ''', values)
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка обновления: {e}")
+            return False
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    def get_user(self, chat_id):
+        """Получение данных пользователя"""
+        self.cursor.execute('SELECT * FROM users WHERE chat_id = ?', (chat_id,))
+        return self.cursor.fetchone()
+
+    def check_admin_status(self, user_id):
+        """Проверка статуса администратора"""
+        self.cursor.execute('SELECT * FROM admins WHERE user_id = ?', (user_id,))
+        return self.cursor.fetchone() is not None
+
+    def add_admin(self, user_id, added_by):
+        """Добавление администратора"""
+        try:
+            self.cursor.execute('''
+                INSERT INTO admins (user_id, added_by) VALUES (?, ?)
+                ON CONFLICT(user_id) DO NOTHING
+            ''', (user_id, added_by))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка добавления админа: {e}")
+            return False
+
+    def remove_admin(self, user_id):
+        """Удаление администратора"""
+        try:
+            self.cursor.execute('DELETE FROM admins WHERE user_id = ?', (user_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка удаления админа: {e}")
+            return False
+
+    def get_all_users(self):
+        """Получение всех пользователей"""
+        self.cursor.execute('SELECT * FROM users WHERE registration_complete = TRUE')
+        return self.cursor.fetchall()
+
+    def search_users_by_fio(self, search_term):
+        """Поиск пользователей по ФИО"""
+        self.cursor.execute('''
+            SELECT * FROM users 
+            WHERE fio LIKE ? OR rank LIKE ?
+        ''', (f'%{search_term}%', f'%{search_term}%'))
+        return self.cursor.fetchall()
+
+    def add_aerodrome(self, keyword, content):
+        """Добавление информации об аэродроме"""
+        try:
+            self.cursor.execute('''
+                INSERT INTO aerodromes (keyword, content) VALUES (?, ?)
+            ''', (keyword, content))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка добавления аэродрома: {e}")
+            return False
+
+    def search_aerodromes(self, keyword):
+        """Поиск аэродромов"""
+        self.cursor.execute('''
+            SELECT content FROM aerodromes 
+            WHERE keyword LIKE ?
+        ''', (f'%{keyword}%',))
+        return self.cursor.fetchall()
+
+    def set_registration_complete(self, chat_id):
+        """Завершение регистрации"""
+        return self.update_user(chat_id, registration_complete=True)
+
+    def close(self):
+        """Закрытие подключения"""
+        if self.conn:
+            self.conn.close()
