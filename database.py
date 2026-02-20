@@ -1,74 +1,163 @@
 import sqlite3
+from datetime import datetime
 
 class Database:
     def __init__(self, db_name):
-        self.conn = sqlite3.connect(db_name)
-        self.cursor = self.conn.cursor()
+        self.db_name = db_name
+        self.conn = None
+        self.cursor = None
+        self.connect()
         self.create_tables()
 
+    def connect(self):
+        """Подключение к базе данных"""
+        self.conn = sqlite3.connect(self.db_name, check_same_thread=False)
+        self.cursor = self.conn.cursor()
+
     def create_tables(self):
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chat_id INTEGER UNIQUE,
-            last_name TEXT,
-            first_name TEXT,
-            patronymic TEXT,
-            rank TEXT,
-            qualification TEXT,
-            leave_start_date TEXT,
-            leave_end_date TEXT,
-            vlk_date TEXT,
-            umo_date TEXT,
-            exercise_4_md_m_date TEXT,
-            exercise_7_md_m_date TEXT,
-            exercise_4_md_90a_date TEXT,
-            exercise_7_md_90a_date TEXT,
-            parachute_jump_date TEXT,
-            registration_complete BOOLEAN
-        )''')
+        """Создание таблиц"""
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER UNIQUE,
+                username TEXT,
+                fio TEXT,
+                rank TEXT,
+                qualification TEXT,
+                leave_start_date TEXT,
+                leave_end_date TEXT,
+                vlk_date TEXT,
+                umo_date TEXT,
+                exercise_4_md_m_date TEXT,
+                exercise_7_md_m_date TEXT,
+                exercise_4_md_90a_date TEXT,
+                exercise_7_md_90a_date TEXT,
+                parachute_jump_date TEXT,
+                registration_complete BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
 
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS admins (
-            admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            FOREIGN KEY (user_id) REFERENCES users (user_id)
-        )''')
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS admins (
+                admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER UNIQUE,
+                added_by INTEGER,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )
+        ''')
 
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS aerodromes (
-            aerodrome_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            location TEXT
-        )''')
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS aerodromes (
+                aerodrome_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                keyword TEXT,
+                content TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
 
         self.conn.commit()
 
-    def add_user(self, chat_id, last_name, first_name, patronymic, rank, qualification, leave_start_date, leave_end_date, vlk_date, umo_date, exercise_4_md_m_date, exercise_7_md_m_date, exercise_4_md_90a_date, exercise_7_md_90a_date, parachute_jump_date, registration_complete):
-        self.cursor.execute('''INSERT INTO users (chat_id, last_name, first_name, patronymic, rank, qualification, leave_start_date, leave_end_date, vlk_date, umo_date, exercise_4_md_m_date, exercise_7_md_m_date, exercise_4_md_90a_date, exercise_7_md_90a_date, parachute_jump_date, registration_complete) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (chat_id, last_name, first_name, patronymic, rank, qualification, leave_start_date, leave_end_date, vlk_date, umo_date, exercise_4_md_m_date, exercise_7_md_m_date, exercise_4_md_90a_date, exercise_7_md_90a_date, parachute_jump_date, registration_complete))
-        self.conn.commit()
+    def add_user(self, chat_id, username=None, **kwargs):
+        """Добавление нового пользователя"""
+        try:
+            self.cursor.execute('''
+                INSERT INTO users (chat_id, username) VALUES (?, ?)
+                ON CONFLICT(chat_id) DO NOTHING
+            ''', (chat_id, username))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка добавления пользователя: {e}")
+            return False
 
-    def update_user(self, user_id, **fields):
-        set_clause = ', '.join(f'{key} = ?' for key in fields)
-        self.cursor.execute(f'UPDATE users SET {set_clause} WHERE user_id = ?', (*fields.values(), user_id))
-        self.conn.commit()
+    def update_user(self, chat_id, **fields):
+        """Обновление данных пользователя"""
+        if not fields:
+            return False
+        
+        set_clause = ', '.join(f'{key} = ?' for key in fields.keys())
+        values = list(fields.values())
+        values.append(chat_id)
+        
+        try:
+            self.cursor.execute(f'''
+                UPDATE users SET {set_clause} WHERE chat_id = ?
+            ''', values)
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка обновления: {e}")
+            return False
+
+    def get_user(self, chat_id):
+        """Получение данных пользователя"""
+        self.cursor.execute('SELECT * FROM users WHERE chat_id = ?', (chat_id,))
+        return self.cursor.fetchone()
 
     def check_admin_status(self, user_id):
+        """Проверка статуса администратора"""
         self.cursor.execute('SELECT * FROM admins WHERE user_id = ?', (user_id,))
         return self.cursor.fetchone() is not None
 
+    def add_admin(self, user_id, added_by):
+        """Добавление администратора"""
+        try:
+            self.cursor.execute('''
+                INSERT INTO admins (user_id, added_by) VALUES (?, ?)
+                ON CONFLICT(user_id) DO NOTHING
+            ''', (user_id, added_by))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка добавления админа: {e}")
+            return False
+
+    def remove_admin(self, user_id):
+        """Удаление администратора"""
+        try:
+            self.cursor.execute('DELETE FROM admins WHERE user_id = ?', (user_id,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка удаления админа: {e}")
+            return False
+
     def get_all_users(self):
-        self.cursor.execute('SELECT * FROM users')
+        """Получение всех пользователей"""
+        self.cursor.execute('SELECT * FROM users WHERE registration_complete = TRUE')
         return self.cursor.fetchall()
 
-    def search_users_by_last_name(self, last_name):
-        self.cursor.execute('SELECT * FROM users WHERE last_name = ?', (last_name,))
+    def search_users_by_fio(self, search_term):
+        """Поиск пользователей по ФИО"""
+        self.cursor.execute('''
+            SELECT * FROM users 
+            WHERE fio LIKE ? OR rank LIKE ?
+        ''', (f'%{search_term}%', f'%{search_term}%'))
         return self.cursor.fetchall()
 
-    def search_aerodromes(self, name):
-        self.cursor.execute('SELECT * FROM aerodromes WHERE name LIKE ?', (f'%{name}%',))
+    def add_aerodrome(self, keyword, content):
+        """Добавление информации об аэродроме"""
+        try:
+            self.cursor.execute('''
+                INSERT INTO aerodromes (keyword, content) VALUES (?, ?)
+            ''', (keyword, content))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка добавления аэродрома: {e}")
+            return False
+
+    def search_aerodromes(self, keyword):
+        """Поиск аэродромов"""
+        self.cursor.execute('''
+            SELECT content FROM aerodromes 
+            WHERE keyword LIKE ?
+        ''', (f'%{keyword}%',))
         return self.cursor.fetchall()
 
     def close(self):
-        self.conn.close()
-
-# Usage example
-# db = Database('database.db')
-# db.add_user(chat_id=1, last_name='Doe', first_name='John', patronymic='J.', rank='Captain', qualification='Pilot', leave_start_date='2026-01-01', leave_end_date='2026-01-10', vlk_date='2026-01-05', umo_date='2026-01-06', exercise_4_md_m_date='2026-01-07', exercise_7_md_m_date='2026-01-08', exercise_4_md_90a_date='2026-01-09', exercise_7_md_90a_date='2026-01-10', parachute_jump_date='2026-01-11', registration_complete=True)
+        """Закрытие подключения"""
+        if self.conn:
+            self.conn.close()
