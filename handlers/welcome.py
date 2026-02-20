@@ -4,6 +4,7 @@ from config import TOPIC_ID
 
 logger = logging.getLogger(__name__)
 router = Router()
+db = Database('bot_database.db')
 welcomed_users = set()
 
 @router.message(lambda msg: msg.chat.type in ['group', 'supergroup'])
