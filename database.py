@@ -207,6 +207,7 @@ class Database:
         return []
     
     def search_users(self, search_text: str):
+        """Поиск пользователей по ФИО или username"""
         search_text = search_text.strip().lower()
         if not search_text:
             return []
@@ -375,7 +376,7 @@ class Database:
         )
     
     def search_aerodromes(self, keyword: str):
-        """Поиск аэродромов по ключевому слову"""
+        """Поиск аэродромов по ключевому слову (для search.py)"""
         keyword = keyword.strip().lower()
         
         conn = self.get_connection()
