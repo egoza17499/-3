@@ -43,7 +43,6 @@ class Database:
             self.release_connection(conn)
     
     def create_tables(self):
-        # Таблица пользователей
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
@@ -65,7 +64,6 @@ class Database:
             )
         """)
         
-        # Таблица админов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS admins (
                 id SERIAL PRIMARY KEY,
@@ -76,7 +74,6 @@ class Database:
             )
         """)
         
-        # Таблица блокировок
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS instance_lock (
                 id SERIAL PRIMARY KEY,
@@ -129,7 +126,31 @@ class Database:
         return None
     
     def get_all_users(self):
-        return self.execute_query("SELECT * FROM users WHERE is_registered = TRUE", fetch=True)
+        """Получение всех пользователей (возвращает кортежи как get_user)"""
+        result = self.execute_query("SELECT * FROM users WHERE is_registered = TRUE", fetch=True)
+        if result:
+            users = []
+            for user in result:
+                users.append((
+                    user['user_id'],
+                    user['username'],
+                    user['registered_at'],
+                    user['fio'],
+                    user['rank'],
+                    user['qualification'],
+                    user['leave_start_date'],
+                    user['leave_end_date'],
+                    user['vlk_date'],
+                    user['umo_date'],
+                    user['exercise_4_md_m_date'],
+                    user['exercise_7_md_m_date'],
+                    user['exercise_4_md_90a_date'],
+                    user['exercise_7_md_90a_date'],
+                    user['parachute_jump_date'],
+                    user['is_registered']
+                ))
+            return users
+        return []
     
     def set_registration_complete(self, user_id: int):
         self.execute_query(
@@ -138,20 +159,16 @@ class Database:
         )
     
     def check_admin_status(self, user_id: int, username: str = None):
-        """Проверка статуса администратора (по ID или username)"""
         from config import ADMIN_IDS, ADMIN_USERNAMES
         
-        # Проверяем по ID из config
         if user_id in ADMIN_IDS:
             return True
         
-        # Проверяем по username из config
         if username:
             username_clean = username.lstrip('@')
             if username_clean in ADMIN_USERNAMES:
                 return True
         
-        # Проверяем в таблице admins в БД
         result = self.execute_query(
             "SELECT user_id FROM admins WHERE user_id = %s",
             (user_id,),
@@ -160,7 +177,6 @@ class Database:
         if result:
             return True
         
-        # Проверяем по username в БД
         if username:
             username_clean = username.lstrip('@')
             result = self.execute_query(
@@ -174,7 +190,6 @@ class Database:
         return False
     
     def add_admin(self, user_id: int, username: str, added_by: int):
-        """Добавить админа"""
         username_clean = username.lstrip('@') if username else None
         self.execute_query(
             """INSERT INTO admins (user_id, username, added_by) 
@@ -184,18 +199,15 @@ class Database:
         )
     
     def remove_admin(self, user_id: int):
-        """Удалить админа"""
         self.execute_query(
             "DELETE FROM admins WHERE user_id = %s",
             (user_id,)
         )
     
     def get_all_admins(self):
-        """Получить всех админов"""
         return self.execute_query("SELECT * FROM admins", fetch=True)
     
     def find_user_by_username(self, username: str):
-        """Найти пользователя по username"""
         username_clean = username.lstrip('@')
         result = self.execute_query(
             "SELECT user_id, username FROM users WHERE username ILIKE %s",
