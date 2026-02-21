@@ -35,12 +35,23 @@ async def show_profile(message: types.Message):
 
 @router.message(F.text == "📚 Полезная информация")
 async def show_info(message: types.Message):
-    await message.answer("📚 Полезная информация\n\nВведите название аэродрома или города для поиска контактной информации.")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛡 Блоки по безопасности полетов", callback_data="info_safety")],
+        [InlineKeyboardButton(text="✈️ Поиск информации об аэродроме", callback_data="info_aerodrome")],
+        [InlineKeyboardButton(text="📖 Полезные знания по самолету", callback_data="info_aircraft")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="info_back")]
+    ])
+    
+    await message.answer(
+        "📚 Полезная информация\n\n"
+        "Выберите раздел:",
+        reply_markup=keyboard
+    )
 
 @router.message(F.text == "🛡 Административные функции")
 async def admin_functions(message: types.Message):
     user_id = message.from_user.id
-    if user_id not in ADMIN_IDS and not db.check_admin_status(user_id):
+    if user_id not in ADMIN_IDS and not db.check_admin_status(user_id, message.from_user.username):
         await message.answer("❌ У вас нет доступа")
         return
     # Показываем админское меню с inline клавиатурой
