@@ -112,69 +112,107 @@ def get_date_status(date_str: str, period_days: int, reference_date=None):
     else:
         return '🟢', f'Действует (осталось {days_until_expiry} дн.)', days_until_expiry
 
-def check_flight_ban(user: tuple) -> list:
-    bans = []
+def check_date_warnings(user: tuple):
+    """
+    Проверка предупреждений (30 дней)
+    Возвращает: (warning_list, ban_list)
+    """
+    warnings = []  # Желтые предупреждения (30 дней)
+    bans = []      # Красные запреты (истекло)
+    
     now = datetime.now()
     
+    # Отпуск (конец) - 365 дней
     leave_end = user[7]
     if leave_end:
         leave_date = parse_date(leave_end)
         if leave_date:
             expiry = leave_date + timedelta(days=365)
-            if now > expiry:
-                bans.append('Отпуск истёк')
+            days_left = (expiry - now).days
+            if days_left < 0:
+                bans.append(f"Отпуск истёк")
+            elif days_left <= 30:
+                warnings.append(f"Отпуск (осталось {days_left} дн.)")
     
+    # ВЛК - 180 дней
     vlk_date = user[8]
-    vlk_expired = False
     if vlk_date:
         vlk_parsed = parse_date(vlk_date)
         if vlk_parsed:
             vlk_expiry = vlk_parsed + timedelta(days=180)
-            if now > vlk_expiry:
-                vlk_expired = True
-                bans.append('ВЛК истекло')
+            days_left = (vlk_expiry - now).days
+            if days_left < 0:
+                bans.append(f"ВЛК истекло")
+            elif days_left <= 30:
+                warnings.append(f"ВЛК (осталось {days_left} дн.)")
     
+    # УМО - 365 дней от ВЛК
     umo_date = user[9]
     if umo_date and umo_date.lower() not in ['нет', 'освобожден', 'осв', 'не требуется']:
         umo_parsed = parse_date(umo_date)
-        if umo_parsed and vlk_date:
-            vlk_parsed = parse_date(vlk_date)
+        if umo_parsed and user[8]:
+            vlk_parsed = parse_date(user[8])
             if vlk_parsed:
                 umo_expiry = vlk_parsed + timedelta(days=365)
-                if now > umo_expiry:
-                    if 'УМО истекло' not in bans:
-                        bans.append('УМО истекло')
-        elif not umo_parsed:
-            if vlk_expired and 'УМО не пройдено' not in bans:
-                bans.append('УМО не пройдено')
-    elif umo_date and umo_date.lower() in ['нет', 'освобожден', 'осв', 'не требуется']:
-        if vlk_expired and 'УМО не пройдено' not in bans:
-            bans.append('УМО не пройдено')
+                days_left = (umo_expiry - now).days
+                if days_left < 0:
+                    bans.append(f"УМО истекло")
+                elif days_left <= 30:
+                    warnings.append(f"УМО (осталось {days_left} дн.)")
     
+    # КБП-4 МД-М - 180 дней
     ex4_md_m = user[10]
     if ex4_md_m:
-        status, _, _ = get_date_status(ex4_md_m, EXERCISE_4_PERIOD)
-        if status == '🔴':
-            bans.append(f'Упражнение 4 (Ил-76 МД-М) истекло')
+        ex4_parsed = parse_date(ex4_md_m)
+        if ex4_parsed:
+            ex4_expiry = ex4_parsed + timedelta(days=EXERCISE_4_PERIOD)
+            days_left = (ex4_expiry - now).days
+            if days_left < 0:
+                bans.append(f"КБП-4 (МД-М) истекло")
+            elif days_left <= 30:
+                warnings.append(f"КБП-4 (МД-М) (осталось {days_left} дн.)")
     
+    # КБП-7 МД-М - 360 дней
     ex7_md_m = user[11]
     if ex7_md_m:
-        status, _, _ = get_date_status(ex7_md_m, EXERCISE_7_PERIOD)
-        if status == '🔴':
-            bans.append(f'Упражнение 7 (Ил-76 МД-М) истекло')
+        ex7_parsed = parse_date(ex7_md_m)
+        if ex7_parsed:
+            ex7_expiry = ex7_parsed + timedelta(days=EXERCISE_7_PERIOD)
+            days_left = (ex7_expiry - now).days
+            if days_left < 0:
+                bans.append(f"КБП-7 (МД-М) истекло")
+            elif days_left <= 30:
+                warnings.append(f"КБП-7 (МД-М) (осталось {days_left} дн.)")
     
+    # КБП-4 МД-90А - 180 дней
     ex4_md_90a = user[12]
     if ex4_md_90a:
-        status, _, _ = get_date_status(ex4_md_90a, EXERCISE_4_PERIOD)
-        if status == '🔴':
-            bans.append(f'Упражнение 4 (Ил-76 МД-90А) истекло')
+        ex4_parsed = parse_date(ex4_md_90a)
+        if ex4_parsed:
+            ex4_expiry = ex4_parsed + timedelta(days=EXERCISE_4_PERIOD)
+            days_left = (ex4_expiry - now).days
+            if days_left < 0:
+                bans.append(f"КБП-4 (МД-90А) истекло")
+            elif days_left <= 30:
+                warnings.append(f"КБП-4 (МД-90А) (осталось {days_left} дн.)")
     
+    # КБП-7 МД-90А - 360 дней
     ex7_md_90a = user[13]
     if ex7_md_90a:
-        status, _, _ = get_date_status(ex7_md_90a, EXERCISE_7_PERIOD)
-        if status == '🔴':
-            bans.append(f'Упражнение 7 (Ил-76 МД-90А) истекло')
+        ex7_parsed = parse_date(ex7_md_90a)
+        if ex7_parsed:
+            ex7_expiry = ex7_parsed + timedelta(days=EXERCISE_7_PERIOD)
+            days_left = (ex7_expiry - now).days
+            if days_left < 0:
+                bans.append(f"КБП-7 (МД-90А) истекло")
+            elif days_left <= 30:
+                warnings.append(f"КБП-7 (МД-90А) (осталось {days_left} дн.)")
     
+    return warnings, bans
+
+def check_flight_ban(user: tuple) -> list:
+    """Проверка запретов на полёты"""
+    _, bans = check_date_warnings(user)
     return bans
 
 def generate_profile_text(user: tuple) -> str:
