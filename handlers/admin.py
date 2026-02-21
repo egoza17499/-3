@@ -1,5 +1,7 @@
 import logging
 from aiogram import Router, types
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_IDS
 from validators import check_flight_ban
@@ -7,6 +9,12 @@ from db_manager import db
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+class AddAdminState(StatesGroup):
+    username = State()
+
+class RemoveAdminState(StatesGroup):
+    user_id = State()
 
 def get_admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -19,7 +27,7 @@ def get_admin_keyboard():
 
 @router.callback_query(lambda c: c.data == "admin_back")
 async def admin_back(callback: types.CallbackQuery):
-    is_admin = callback.from_user.id in ADMIN_IDS or db.check_admin_status(callback.from_user.id)
+    is_admin = callback.from_user.id in ADMIN_IDS or db.check_admin_status(callback.from_user.id, callback.from_user.username)
     from handlers.menu import get_main_keyboard
     await callback.message.edit_text("Главное меню", reply_markup=get_main_keyboard(is_admin))
     await callback.answer()
@@ -27,7 +35,7 @@ async def admin_back(callback: types.CallbackQuery):
 @router.callback_query(lambda c: c.data == "admin_list")
 async def admin_list(callback: types.CallbackQuery):
     # Проверяем права админа
-    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id):
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
         await callback.answer("❌ У вас нет доступа", show_alert=True)
         return
     
@@ -57,7 +65,7 @@ async def admin_list(callback: types.CallbackQuery):
 @router.callback_query(lambda c: c.data == "admin_stats")
 async def admin_stats(callback: types.CallbackQuery):
     # Проверяем права админа
-    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id):
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
         await callback.answer("❌ У вас нет доступа", show_alert=True)
         return
     
@@ -80,7 +88,7 @@ async def admin_stats(callback: types.CallbackQuery):
 @router.callback_query(lambda c: c.data == "admin_fill_airports")
 async def admin_fill_airports(callback: types.CallbackQuery):
     # Проверяем права админа
-    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id):
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
         await callback.answer("❌ У вас нет доступа", show_alert=True)
         return
     
@@ -100,13 +108,13 @@ async def admin_fill_airports(callback: types.CallbackQuery):
 @router.callback_query(lambda c: c.data == "admin_manage")
 async def admin_manage(callback: types.CallbackQuery):
     # Проверяем права админа
-    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id):
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
         await callback.answer("❌ У вас нет доступа", show_alert=True)
         return
     
     text = "👥 Управление администраторами\n\n"
     text += "Выберите действие:\n\n"
-    text += "➕ Добавить админа\n"
+    text += "➕ Добавить админа по username\n"
     text += "➖ Удалить админа"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -119,38 +127,90 @@ async def admin_manage(callback: types.CallbackQuery):
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "admin_add_admin")
-async def admin_add_admin_start(callback: types.CallbackQuery):
+async def admin_add_admin_start(callback: types.CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("❌ Только главный админ может добавлять админов", show_alert=True)
         return
     
-    await callback.message.edit_text("➕ Добавление админа\n\nВведите ID пользователя которого хотите сделать админом:")
+    await callback.message.edit_text(
+        "➕ Добавление админа\n\n"
+        "Введите username пользователя (без @ или с @):\n\n"
+        "Пример: @username или username"
+    )
+    await state.set_state(AddAdminState.username)
     await callback.answer()
 
+@router.message(AddAdminState.username)
+async def admin_add_admin_by_username(message: types.Message, state: FSMContext):
+    username = message.text.strip().lstrip('@')
+    
+    # Ищем пользователя в базе
+    user = db.find_user_by_username(username)
+    if not user:
+        await message.answer(
+            f"❌ Пользователь @{username} не найден в базе данных!\n\n"
+            "Пользователь должен сначала зарегистрироваться в боте."
+        )
+        await state.clear()
+        return
+    
+    # Добавляем как админа
+    db.add_admin(user['user_id'], username, message.from_user.id)
+    
+    await message.answer(f"✅ Пользователь @{username} (ID: {user['user_id']}) добавлен в админы!")
+    await state.clear()
+
 @router.callback_query(lambda c: c.data == "admin_remove_admin")
-async def admin_remove_admin_start(callback: types.CallbackQuery):
+async def admin_remove_admin_start(callback: types.CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("❌ Только главный админ может удалять админов", show_alert=True)
         return
     
-    # Показываем список текущих админов
-    from config import ADMIN_IDS as all_admins
-    text = "➖ Удаление админа\n\n"
-    text += "Текущие админы (кроме главного):\n\n"
+    # Получаем всех админов из БД
+    admins = db.get_all_admins()
     
-    for admin_id in all_admins:
-        if admin_id != ADMIN_IDS[0]:  # Не показываем главного админа
-            text += f"• ID: {admin_id}\n"
+    if not admins:
+        await callback.message.edit_text("📋 В базе нет дополнительных админов (кроме тех что в config)")
+        await callback.answer()
+        return
+    
+    text = "➖ Удаление админа\n\n"
+    text += "Текущие админы из базы данных:\n\n"
+    
+    for admin in admins:
+        username = admin['username'] or "не указан"
+        text += f"• ID: {admin['user_id']} (@{username})\n"
     
     text += "\nВведите ID админа которого хотите удалить:"
     
     await callback.message.edit_text(text)
+    await state.set_state(RemoveAdminState.user_id)
     await callback.answer()
+
+@router.message(RemoveAdminState.user_id)
+async def admin_remove_admin_by_id(message: types.Message, state: FSMContext):
+    try:
+        user_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Введите корректный ID (число)")
+        return
+    
+    # Проверяем что это не главный админ
+    if user_id in ADMIN_IDS:
+        await message.answer("❌ Нельзя удалить главного админа из config!")
+        await state.clear()
+        return
+    
+    # Удаляем админа
+    db.remove_admin(user_id)
+    
+    await message.answer(f"✅ Админ с ID {user_id} удалён!")
+    await state.clear()
 
 @router.callback_query(lambda c: c.data == "admin_functions_back")
 async def admin_functions_back(callback: types.CallbackQuery):
     # Проверяем права админа
-    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id):
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
         await callback.answer("❌ У вас нет доступа", show_alert=True)
         return
     
