@@ -43,6 +43,7 @@ class Database:
             self.release_connection(conn)
     
     def create_tables(self):
+        # Таблица пользователей
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
@@ -64,6 +65,18 @@ class Database:
             )
         """)
         
+        # Таблица админов
+        self.execute_query("""
+            CREATE TABLE IF NOT EXISTS admins (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT UNIQUE,
+                username TEXT,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                added_by BIGINT
+            )
+        """)
+        
+        # Таблица блокировок
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS instance_lock (
                 id SERIAL PRIMARY KEY,
@@ -124,9 +137,72 @@ class Database:
             (user_id,)
         )
     
-    def check_admin_status(self, user_id: int):
-        from config import ADMIN_IDS
-        return user_id in ADMIN_IDS
+    def check_admin_status(self, user_id: int, username: str = None):
+        """Проверка статуса администратора (по ID или username)"""
+        from config import ADMIN_IDS, ADMIN_USERNAMES
+        
+        # Проверяем по ID из config
+        if user_id in ADMIN_IDS:
+            return True
+        
+        # Проверяем по username из config
+        if username:
+            username_clean = username.lstrip('@')
+            if username_clean in ADMIN_USERNAMES:
+                return True
+        
+        # Проверяем в таблице admins в БД
+        result = self.execute_query(
+            "SELECT user_id FROM admins WHERE user_id = %s",
+            (user_id,),
+            fetch=True
+        )
+        if result:
+            return True
+        
+        # Проверяем по username в БД
+        if username:
+            username_clean = username.lstrip('@')
+            result = self.execute_query(
+                "SELECT user_id FROM admins WHERE username = %s",
+                (username_clean,),
+                fetch=True
+            )
+            if result:
+                return True
+        
+        return False
+    
+    def add_admin(self, user_id: int, username: str, added_by: int):
+        """Добавить админа"""
+        username_clean = username.lstrip('@') if username else None
+        self.execute_query(
+            """INSERT INTO admins (user_id, username, added_by) 
+               VALUES (%s, %s, %s)
+               ON CONFLICT (user_id) DO UPDATE SET username = %s""",
+            (user_id, username_clean, added_by, username_clean)
+        )
+    
+    def remove_admin(self, user_id: int):
+        """Удалить админа"""
+        self.execute_query(
+            "DELETE FROM admins WHERE user_id = %s",
+            (user_id,)
+        )
+    
+    def get_all_admins(self):
+        """Получить всех админов"""
+        return self.execute_query("SELECT * FROM admins", fetch=True)
+    
+    def find_user_by_username(self, username: str):
+        """Найти пользователя по username"""
+        username_clean = username.lstrip('@')
+        result = self.execute_query(
+            "SELECT user_id, username FROM users WHERE username ILIKE %s",
+            (f"%{username_clean}%",),
+            fetch=True
+        )
+        return result[0] if result else None
     
     def check_lock_status(self):
         result = self.execute_query(
