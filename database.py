@@ -4,6 +4,7 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from config import DATABASE_URL
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ class Database:
             self.release_connection(conn)
     
     def create_tables(self):
+        # Таблица пользователей
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
@@ -64,6 +66,7 @@ class Database:
             )
         """)
         
+        # Таблица админов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS admins (
                 id SERIAL PRIMARY KEY,
@@ -74,6 +77,7 @@ class Database:
             )
         """)
         
+        # Таблица блокировок
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS instance_lock (
                 id SERIAL PRIMARY KEY,
@@ -83,7 +87,66 @@ class Database:
             )
         """)
         
-        logger.info("✅ Таблицы созданы/обновлены")
+        # Таблица аэродромов
+        self.execute_query("""
+            CREATE TABLE IF NOT EXISTS aerodromes (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                city TEXT,
+                airport_name TEXT,
+                housing_info TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by BIGINT
+            )
+        """)
+        
+        # Таблица телефонов аэродромов
+        self.execute_query("""
+            CREATE TABLE IF NOT EXISTS aerodrome_phones (
+                id SERIAL PRIMARY KEY,
+                aerodrome_id INTEGER REFERENCES aerodromes(id) ON DELETE CASCADE,
+                phone_name TEXT,
+                phone_number TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Таблица документов аэродромов
+        self.execute_query("""
+            CREATE TABLE IF NOT EXISTS aerodrome_documents (
+                id SERIAL PRIMARY KEY,
+                aerodrome_id INTEGER REFERENCES aerodromes(id) ON DELETE CASCADE,
+                doc_name TEXT,
+                doc_type TEXT,
+                file_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Таблица блоков безопасности
+        self.execute_query("""
+            CREATE TABLE IF NOT EXISTS safety_blocks (
+                id SERIAL PRIMARY KEY,
+                block_number INTEGER UNIQUE NOT NULL,
+                block_text TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by BIGINT
+            )
+        """)
+        
+        # Таблица знаний по самолётам
+        self.execute_query("""
+            CREATE TABLE IF NOT EXISTS aircraft_knowledge (
+                id SERIAL PRIMARY KEY,
+                aircraft_type TEXT NOT NULL,
+                knowledge_name TEXT,
+                knowledge_text TEXT,
+                file_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        logger.info("✅ Все таблицы созданы/обновлены")
     
     def add_user(self, user_id: int, username: str):
         self.execute_query(
@@ -152,7 +215,6 @@ class Database:
         return []
     
     def search_users(self, search_text: str):
-        """Поиск пользователей по ФИО"""
         search_text = search_text.strip().lower()
         if not search_text:
             return []
@@ -189,7 +251,6 @@ class Database:
         return []
     
     def get_users_ready_to_fly(self):
-        """Получить пользователей готовых к полётам"""
         all_users = self.get_all_users()
         ready_users = []
         
@@ -202,7 +263,6 @@ class Database:
         return ready_users
     
     def get_users_cannot_fly(self):
-        """Получить пользователей кто не может летать"""
         all_users = self.get_all_users()
         cannot_fly_users = []
         
@@ -324,6 +384,124 @@ class Database:
     
     def search_aerodromes(self, keyword: str):
         return []
+    
+    # ==================== НОВЫЕ МЕТОДЫ ДЛЯ БАЗЫ ЗНАНИЙ ====================
+    
+    # АЭРОДРОМЫ
+    def add_aerodrome(self, name: str, city: str, airport_name: str, housing_info: str, created_by: int):
+        result = self.execute_query(
+            """INSERT INTO aerodromes (name, city, airport_name, housing_info, created_by) 
+               VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+            (name, city, airport_name, housing_info, created_by),
+            fetch=True
+        )
+        return result[0]['id'] if result else None
+    
+    def get_aerodrome_by_search(self, search_text: str):
+        search_text = search_text.strip().lower()
+        result = self.execute_query(
+            """SELECT * FROM aerodromes 
+               WHERE LOWER(name) LIKE %s 
+               OR LOWER(city) LIKE %s 
+               OR LOWER(airport_name) LIKE %s""",
+            (f"%{search_text}%", f"%{search_text}%", f"%{search_text}%"),
+            fetch=True
+        )
+        return result[0] if result else None
+    
+    def get_all_aerodromes_list(self):
+        return self.execute_query("SELECT * FROM aerodromes ORDER BY name", fetch=True)
+    
+    def update_aerodrome(self, aerodrome_id: int, **kwargs):
+        set_clause = ", ".join([f"{key} = %s" for key in kwargs.keys()])
+        values = list(kwargs.values()) + [aerodrome_id]
+        query = f"UPDATE aerodromes SET {set_clause} WHERE id = %s"
+        self.execute_query(query, tuple(values))
+    
+    def delete_aerodrome(self, aerodrome_id: int):
+        self.execute_query("DELETE FROM aerodromes WHERE id = %s", (aerodrome_id,))
+    
+    # ТЕЛЕФОНЫ
+    def add_aerodrome_phone(self, aerodrome_id: int, phone_name: str, phone_number: str):
+        self.execute_query(
+            """INSERT INTO aerodrome_phones (aerodrome_id, phone_name, phone_number) 
+               VALUES (%s, %s, %s)""",
+            (aerodrome_id, phone_name, phone_number)
+        )
+    
+    def get_aerodrome_phones(self, aerodrome_id: int):
+        return self.execute_query(
+            "SELECT * FROM aerodrome_phones WHERE aerodrome_id = %s ORDER BY phone_name",
+            (aerodrome_id,),
+            fetch=True
+        )
+    
+    def delete_aerodrome_phone(self, phone_id: int):
+        self.execute_query("DELETE FROM aerodrome_phones WHERE id = %s", (phone_id,))
+    
+    # ДОКУМЕНТЫ
+    def add_aerodrome_document(self, aerodrome_id: int, doc_name: str, doc_type: str, file_id: str):
+        self.execute_query(
+            """INSERT INTO aerodrome_documents (aerodrome_id, doc_name, doc_type, file_id) 
+               VALUES (%s, %s, %s, %s)""",
+            (aerodrome_id, doc_name, doc_type, file_id)
+        )
+    
+    def get_aerodrome_documents(self, aerodrome_id: int):
+        return self.execute_query(
+            "SELECT * FROM aerodrome_documents WHERE aerodrome_id = %s",
+            (aerodrome_id,),
+            fetch=True
+        )
+    
+    def delete_aerodrome_document(self, doc_id: int):
+        self.execute_query("DELETE FROM aerodrome_documents WHERE id = %s", (doc_id,))
+    
+    # БЛОКИ БЕЗОПАСНОСТИ
+    def add_safety_block(self, block_number: int, block_text: str, created_by: int):
+        self.execute_query(
+            """INSERT INTO safety_blocks (block_number, block_text, created_by) 
+               VALUES (%s, %s, %s)""",
+            (block_number, block_text, created_by)
+        )
+    
+    def get_safety_block_by_number(self, block_number: int):
+        result = self.execute_query(
+            "SELECT * FROM safety_blocks WHERE block_number = %s",
+            (block_number,),
+            fetch=True
+        )
+        return result[0] if result else None
+    
+    def get_all_safety_blocks(self):
+        return self.execute_query("SELECT * FROM safety_blocks ORDER BY block_number", fetch=True)
+    
+    def update_safety_block(self, block_number: int, block_text: str):
+        self.execute_query(
+            "UPDATE safety_blocks SET block_text = %s WHERE block_number = %s",
+            (block_text, block_number)
+        )
+    
+    def delete_safety_block(self, block_number: int):
+        self.execute_query("DELETE FROM safety_blocks WHERE block_number = %s", (block_number,))
+    
+    # ЗНАНИЯ ПО САМОЛЕТАМ
+    def add_aircraft_knowledge(self, aircraft_type: str, knowledge_name: str, knowledge_text: str, file_id: str = None):
+        self.execute_query(
+            """INSERT INTO aircraft_knowledge (aircraft_type, knowledge_name, knowledge_text, file_id) 
+               VALUES (%s, %s, %s, %s)""",
+            (aircraft_type, knowledge_name, knowledge_text, file_id)
+        )
+    
+    def get_aircraft_knowledge_by_type(self, aircraft_type: str):
+        return self.execute_query(
+            "SELECT * FROM aircraft_knowledge WHERE aircraft_type = %s",
+            (aircraft_type,),
+            fetch=True
+        )
+    
+    def delete_aircraft_knowledge(self, knowledge_id: int):
+        self.execute_query("DELETE FROM aircraft_knowledge WHERE id = %s", (knowledge_id,))
     
     def close(self):
         if self.db_pool:
