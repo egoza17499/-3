@@ -1,29 +1,60 @@
-import sqlite3
+import psycopg2
+from psycopg2 import pool
+from datetime import datetime, timedelta
+from config import DATABASE_URL
 import logging
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 class Database:
-    def __init__(self, db_name):
-        self.db_name = db_name
-        self.conn = None
-        self.cursor = None
-        self.connect()
-        self.create_tables()
-
-    def connect(self):
-        """Подключение к базе данных"""
-        self.conn = sqlite3.connect(self.db_name, check_same_thread=False)
-        self.cursor = self.conn.cursor()
-
+    def __init__(self, db_url):
+        try:
+            # Создаём пул соединений
+            self.db_pool = pool.SimpleConnectionPool(
+                1, 10,
+                db_url,
+                cursor_factory=psycopg2.extras.RealDictCursor
+            )
+            if self.db_pool:
+                logger.info("✅ PostgreSQL подключена успешно!")
+            
+            # Создаём таблицы
+            self.create_tables()
+        except Exception as e:
+            logger.error(f"❌ Ошибка подключения к PostgreSQL: {e}")
+            raise
+    
+    def get_connection(self):
+        """Получить соединение из пула"""
+        return self.db_pool.getconn()
+    
+    def release_connection(self, conn):
+        """Вернуть соединение в пул"""
+        self.db_pool.putconn(conn)
+    
+    def execute_query(self, query, params=None, fetch=False):
+        """Выполнить SQL запрос"""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                if fetch:
+                    result = cursor.fetchall()
+                else:
+                    result = None
+                conn.commit()
+                return result
+        finally:
+            self.release_connection(conn)
+    
     def create_tables(self):
         """Создание таблиц"""
-        self.cursor.execute('''
+        # Таблица пользователей
+        self.execute_query("""
             CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id INTEGER UNIQUE,
+                user_id BIGINT PRIMARY KEY,
                 username TEXT,
+                registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 fio TEXT,
                 rank TEXT,
                 qualification TEXT,
@@ -36,203 +67,135 @@ class Database:
                 exercise_4_md_90a_date TEXT,
                 exercise_7_md_90a_date TEXT,
                 parachute_jump_date TEXT,
-                registration_complete BOOLEAN DEFAULT FALSE,
+                is_registered BOOLEAN DEFAULT FALSE
+            )
+        """)
+        
+        # Таблица блокировок
+        self.execute_query("""
+            CREATE TABLE IF NOT EXISTS instance_lock (
+                id SERIAL PRIMARY KEY,
+                instance_id TEXT UNIQUE,
+                heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        ''')
-
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS admins (
-                admin_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER UNIQUE,
-                added_by INTEGER,
-                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS aerodromes (
-                aerodrome_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                keyword TEXT,
-                content TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS bot_lock (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                instance_id TEXT NOT NULL,
-                acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        self.conn.commit()
-
-    def add_user(self, chat_id, username=None):
-        """Добавление нового пользователя"""
-        try:
-            self.cursor.execute('''
-                INSERT INTO users (chat_id, username) VALUES (?, ?)
-                ON CONFLICT(chat_id) DO NOTHING
-            ''', (chat_id, username))
-            self.conn.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка добавления пользователя: {e}")
-            return False
-
-    def update_user(self, chat_id, **fields):
+        """)
+        
+        logger.info("✅ Таблицы созданы/обновлены")
+    
+    def add_user(self, user_id: int, username: str):
+        """Добавление пользователя"""
+        self.execute_query(
+            "INSERT INTO users (user_id, username) VALUES (%s, %s) ON CONFLICT (user_id) DO NOTHING",
+            (user_id, username)
+        )
+    
+    def update_user(self, user_id: int, **kwargs):
         """Обновление данных пользователя"""
-        if not fields:
-            return False
-        
-        set_clause = ', '.join(f'{key} = ?' for key in fields.keys())
-        values = list(fields.values())
-        values.append(chat_id)
-        
-        try:
-            self.cursor.execute(f'''
-                UPDATE users SET {set_clause} WHERE chat_id = ?
-            ''', values)
-            self.conn.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка обновления: {e}")
-            return False
-
-    def get_user(self, chat_id):
-        """Получение данных пользователя"""
-        self.cursor.execute('SELECT * FROM users WHERE chat_id = ?', (chat_id,))
-        return self.cursor.fetchone()
-
-    def check_admin_status(self, user_id):
-        """Проверка статуса администратора"""
-        self.cursor.execute('SELECT * FROM admins WHERE user_id = ?', (user_id,))
-        return self.cursor.fetchone() is not None
-
-    def add_admin(self, user_id, added_by):
-        """Добавление администратора"""
-        try:
-            self.cursor.execute('''
-                INSERT INTO admins (user_id, added_by) VALUES (?, ?)
-                ON CONFLICT(user_id) DO NOTHING
-            ''', (user_id, added_by))
-            self.conn.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка добавления админа: {e}")
-            return False
-
-    def remove_admin(self, user_id):
-        """Удаление администратора"""
-        try:
-            self.cursor.execute('DELETE FROM admins WHERE user_id = ?', (user_id,))
-            self.conn.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка удаления админа: {e}")
-            return False
-
+        set_clause = ", ".join([f"{key} = %s" for key in kwargs.keys()])
+        values = list(kwargs.values()) + [user_id]
+        query = f"UPDATE users SET {set_clause} WHERE user_id = %s"
+        self.execute_query(query, tuple(values))
+    
+    def get_user(self, user_id: int):
+        """Получение пользователя"""
+        result = self.execute_query(
+            "SELECT * FROM users WHERE user_id = %s",
+            (user_id,),
+            fetch=True
+        )
+        if result:
+            user = result[0]
+            return (
+                user['user_id'],
+                user['username'],
+                user['registered_at'],
+                user['fio'],
+                user['rank'],
+                user['qualification'],
+                user['leave_start_date'],
+                user['leave_end_date'],
+                user['vlk_date'],
+                user['umo_date'],
+                user['exercise_4_md_m_date'],
+                user['exercise_7_md_m_date'],
+                user['exercise_4_md_90a_date'],
+                user['exercise_7_md_90a_date'],
+                user['parachute_jump_date'],
+                user['is_registered']
+            )
+        return None
+    
     def get_all_users(self):
         """Получение всех пользователей"""
-        self.cursor.execute('SELECT * FROM users WHERE registration_complete = TRUE')
-        return self.cursor.fetchall()
-
-    def search_users_by_fio(self, search_term):
-        """Поиск пользователей по ФИО"""
-        self.cursor.execute('''
-            SELECT * FROM users 
-            WHERE fio LIKE ? OR rank LIKE ?
-        ''', (f'%{search_term}%', f'%{search_term}%'))
-        return self.cursor.fetchall()
-
-    def add_aerodrome(self, keyword, content):
-        """Добавление информации об аэродроме"""
-        try:
-            self.cursor.execute('''
-                INSERT INTO aerodromes (keyword, content) VALUES (?, ?)
-            ''', (keyword, content))
-            self.conn.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка добавления аэродрома: {e}")
-            return False
-
-    def search_aerodromes(self, keyword):
-        """Поиск аэродромов"""
-        self.cursor.execute('''
-            SELECT content FROM aerodromes 
-            WHERE keyword LIKE ?
-        ''', (f'%{keyword}%',))
-        return self.cursor.fetchall()
-
-    def set_registration_complete(self, chat_id):
+        return self.execute_query("SELECT * FROM users WHERE is_registered = TRUE", fetch=True)
+    
+    def set_registration_complete(self, user_id: int):
         """Завершение регистрации"""
-        return self.update_user(chat_id, registration_complete=True)
-
-    def check_and_acquire_lock(self, instance_id):
-        """Проверка и захват блокировки"""
-        try:
-            self.cursor.execute('''
-                INSERT OR REPLACE INTO bot_lock (id, instance_id, acquired_at, last_heartbeat)
-                VALUES (1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ''', (instance_id,))
-            
-            self.cursor.execute('SELECT instance_id, acquired_at FROM bot_lock WHERE id = 1')
-            row = self.cursor.fetchone()
-            self.conn.commit()
-            
-            if row and row[0] == instance_id:
-                logger.info(f"✅ Блокировка захвачена: {instance_id}")
-                return True
-            else:
-                logger.warning(f"❌ Блокировка занята: {row[0] if row else 'неизвестно'}")
-                return False
-        except Exception as e:
-            logger.error(f"Ошибка захвата блокировки: {e}")
-            return False
-
-    def release_lock(self, instance_id):
-        """Освобождение блокировки"""
-        try:
-            self.cursor.execute('DELETE FROM bot_lock WHERE id = 1 AND instance_id = ?', (instance_id,))
-            self.conn.commit()
-            logger.info(f"🔓 Блокировка освобождена: {instance_id}")
-        except Exception as e:
-            logger.error(f"Ошибка освобождения блокировки: {e}")
-
-    def update_heartbeat(self, instance_id):
-        """Обновление heartbeat"""
-        try:
-            self.cursor.execute('''
-                UPDATE bot_lock 
-                SET last_heartbeat = CURRENT_TIMESTAMP 
-                WHERE id = 1 AND instance_id = ?
-            ''', (instance_id,))
-            self.conn.commit()
-        except Exception as e:
-            logger.error(f"Ошибка heartbeat: {e}")
-
+        self.execute_query(
+            "UPDATE users SET is_registered = TRUE WHERE user_id = %s",
+            (user_id,)
+        )
+    
+    def check_admin_status(self, user_id: int):
+        """Проверка статуса администратора"""
+        from config import ADMIN_IDS
+        return user_id in ADMIN_IDS
+    
     def check_lock_status(self):
         """Проверка статуса блокировки"""
-        try:
-            self.cursor.execute('SELECT instance_id, acquired_at, last_heartbeat FROM bot_lock WHERE id = 1')
-            row = self.cursor.fetchone()
-            if row:
-                return {
-                    'instance_id': row[0],
-                    'acquired_at': row[1],
-                    'last_heartbeat': row[2]
-                }
-            return None
-        except Exception as e:
-            logger.error(f"Ошибка проверки блокировки: {e}")
-            return None
-
+        result = self.execute_query(
+            "SELECT instance_id, heartbeat FROM instance_lock WHERE id = 1",
+            fetch=True
+        )
+        return result[0] if result else None
+    
+    def check_and_acquire_lock(self, instance_id: str):
+        """Проверка и захват блокировки"""
+        existing = self.execute_query(
+            "SELECT instance_id, heartbeat FROM instance_lock WHERE id = 1",
+            fetch=True
+        )
+        
+        now = datetime.now()
+        
+        if not existing:
+            self.execute_query(
+                "INSERT INTO instance_lock (id, instance_id, heartbeat) VALUES (1, %s, %s)",
+                (instance_id, now)
+            )
+            return True
+        else:
+            last_heartbeat = existing[0]['heartbeat']
+            if (now - last_heartbeat).total_seconds() > 60:
+                self.execute_query(
+                    "UPDATE instance_lock SET instance_id = %s, heartbeat = %s WHERE id = 1",
+                    (instance_id, now)
+                )
+                return True
+            else:
+                return False
+    
+    def update_heartbeat(self, instance_id: str):
+        """Обновление heartbeat"""
+        self.execute_query(
+            "UPDATE instance_lock SET heartbeat = %s WHERE instance_id = %s AND id = 1",
+            (datetime.now(), instance_id)
+        )
+    
+    def release_lock(self, instance_id: str):
+        """Освобождение блокировки"""
+        self.execute_query(
+            "DELETE FROM instance_lock WHERE instance_id = %s AND id = 1",
+            (instance_id,)
+        )
+    
+    def search_aerodromes(self, keyword: str):
+        """Поиск аэродромов (заглушка)"""
+        return []
+    
     def close(self):
-        """Закрытие подключения"""
-        if self.conn:
-            self.conn.close()
-            logger.info("🔌 База данных закрыта")
+        """Закрытие пула соединений"""
+        if self.db_pool:
+            self.db_pool.closeall()
+            logger.info("🔌 PostgreSQL отключена")
