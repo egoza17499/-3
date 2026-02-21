@@ -12,6 +12,7 @@ def parse_date_auto(date_str: str):
     - 08.06.2025 или 08.06.25
     - 08-06-2025 или 08-06-25
     - 080625 или 08062025
+    Возвращает: datetime объект или None
     """
     if not date_str:
         return None
@@ -19,29 +20,40 @@ def parse_date_auto(date_str: str):
     date_str = str(date_str).strip()
     
     # Проверяем на "освобожден" и синонимы
-    if date_str.lower() in ['освобожден', 'освобождён', 'осв', 'не требуется', '-', '']:
-        return None
-    
-    # Список форматов для проверки
-    formats = [
-        '%d.%m.%Y',    # 08.06.2025
-        '%d.%m.%y',    # 08.06.25
-        '%d-%m-%Y',    # 08-06-2025
-        '%d-%m-%y',    # 08-06-25
-        '%d%m%y',      # 080625
-        '%d%m%Y',      # 08062025
+    освобожден_words = [
+        'освобожден', 'освобождён', 'осв', 'освобождение',
+        'не требуется', 'не нужно', 'нет', '-', ''
     ]
     
-    # Очищаем строку от лишних символов для короткого формата
+    if date_str.lower() in освобожден_words:
+        return None
+    
+    # Очищаем строку от лишних символов
     clean_date = re.sub(r'[^\d]', '', date_str)
     
-    for fmt in formats:
+    # Список форматов для проверки (от длинных к коротким)
+    formats = [
+        ('%d.%m.%Y', date_str),    # 08.06.2025
+        ('%d.%m.%y', date_str),    # 08.06.25
+        ('%d-%m-%Y', date_str),    # 08-06-2025
+        ('%d-%m-%y', date_str),    # 08-06-25
+        ('%d%m%Y', clean_date),    # 08062025
+        ('%d%m%y', clean_date),    # 080625
+    ]
+    
+    for fmt, date_to_parse in formats:
         try:
-            # Для форматов без разделителей используем очищенную строку
-            if fmt in ['%d%m%y', '%d%m%Y']:
-                return datetime.strptime(clean_date, fmt)
-            else:
-                return datetime.strptime(date_str, fmt)
+            parsed = datetime.strptime(date_to_parse, fmt)
+            # Для коротких годов (2 цифры) определяем век
+            if len(clean_date) == 6:
+                # Если год < 50, считаем 20xx, иначе 19xx
+                year = parsed.year
+                if year % 100 < 50:
+                    year = year + 2000 - (year % 100)
+                else:
+                    year = year + 1900 - (year % 100)
+                parsed = parsed.replace(year=year)
+            return parsed
         except ValueError:
             continue
     
@@ -52,13 +64,13 @@ def is_valid_date(date_str: str) -> bool:
     return parse_date_auto(date_str) is not None
 
 def parse_date(date_str: str):
-    """Парсинг даты"""
+    """Парсинг даты с проверкой на освобождение"""
     if not date_str:
         return None
     
     date_str = str(date_str).strip()
     
-    # Проверяем на освобожден и синонимы
+    # Проверяем на освобождение и синонимы
     освобожден_words = [
         'освобожден', 'освобождён', 'осв', 'освобождение',
         'не требуется', 'не нужно', 'нет', '-', ''
@@ -68,6 +80,12 @@ def parse_date(date_str: str):
         return None
     
     return parse_date_auto(date_str)
+
+def format_date(date: datetime) -> str:
+    """Форматирование даты в ДД.ММ.ГГГГ"""
+    if not date:
+        return "Не указано"
+    return date.strftime("%d.%m.%Y")
 
 def get_date_status(date_str: str, period_days: int, reference_date=None):
     """
@@ -195,14 +213,13 @@ def generate_profile_text(user: tuple) -> str:
         leave_date = parse_date(leave_end)
         if leave_date:
             # 12 месяцев от даты конца
-            status, status_text, _ = get_date_status(leave_end, 365, leave_date)
-            # Пересчитываем относительно сегодня
             expiry = leave_date + timedelta(days=365)
             days_left = (expiry - now).days
+            formatted_date = format_date(leave_date)
             if days_left < 0:
-                text += f"🔴 Отпуск (конец):: {leave_end} (Просрочено на {abs(days_left)} дн.)\n"
+                text += f"🔴 Отпуск (конец):: {formatted_date} (Просрочено на {abs(days_left)} дн.)\n"
             else:
-                text += f"🟢 Отпуск (конец):: {leave_end} (Действует (осталось {days_left} дн.))\n"
+                text += f"🟢 Отпуск (конец):: {formatted_date} (Действует (осталось {days_left} дн.))\n"
         else:
             text += f"⚪ Отпуск (конец):: {leave_end}\n"
     else:
@@ -215,10 +232,11 @@ def generate_profile_text(user: tuple) -> str:
         if vlk_parsed:
             vlk_expiry = vlk_parsed + timedelta(days=180)
             days_left = (vlk_expiry - now).days
+            formatted_date = format_date(vlk_parsed)
             if days_left < 0:
-                text += f"🔴 ВЛК: {vlk_date} (Просрочено на {abs(days_left)} дн.)\n"
+                text += f"🔴 ВЛК: {formatted_date} (Просрочено на {abs(days_left)} дн.)\n"
             else:
-                text += f"🟢 ВЛК: {vlk_date} (Действует, осталось {days_left} дн.)\n"
+                text += f"🟢 ВЛК: {formatted_date} (Действует, осталось {days_left} дн.)\n"
         else:
             text += f"⚪ ВЛК: {vlk_date}\n"
     else:
@@ -234,10 +252,11 @@ def generate_profile_text(user: tuple) -> str:
             if vlk_parsed:
                 umo_expiry = vlk_parsed + timedelta(days=365)
                 days_left = (umo_expiry - now).days
+                formatted_date = format_date(umo_parsed)
                 if days_left < 0:
-                    text += f"🔴 УМО:: {umo_date} (Просрочено на {abs(days_left)} дн.)\n"
+                    text += f"🔴 УМО:: {formatted_date} (Просрочено на {abs(days_left)} дн.)\n"
                 else:
-                    text += f"🟢 УМО:: {umo_date} (Действует, осталось {days_left} дн.)\n"
+                    text += f"🟢 УМО:: {formatted_date} (Действует, осталось {days_left} дн.)\n"
         else:
             text += f"⚪ УМО:: {umo_date}\n"
     else:
@@ -250,10 +269,11 @@ def generate_profile_text(user: tuple) -> str:
         if ex4_parsed:
             ex4_expiry = ex4_parsed + timedelta(days=EXERCISE_4_PERIOD)
             days_left = (ex4_expiry - now).days
+            formatted_date = format_date(ex4_parsed)
             if days_left < 0:
-                text += f"🔴 КБП-4 (Ил-76 МД-М):: {ex4_md_m} (Просрочено на {abs(days_left)} дн.)\n"
+                text += f"🔴 КБП-4 (Ил-76 МД-М):: {formatted_date} (Просрочено на {abs(days_left)} дн.)\n"
             else:
-                text += f"🟢 КБП-4 (Ил-76 МД-М):: {ex4_md_m} (Действует (осталось {days_left} дн.))\n"
+                text += f"🟢 КБП-4 (Ил-76 МД-М):: {formatted_date} (Действует (осталось {days_left} дн.))\n"
     
     # КБП-7 (Ил-76 МД-М)
     ex7_md_m = user[10]
@@ -262,10 +282,11 @@ def generate_profile_text(user: tuple) -> str:
         if ex7_parsed:
             ex7_expiry = ex7_parsed + timedelta(days=EXERCISE_7_PERIOD)
             days_left = (ex7_expiry - now).days
+            formatted_date = format_date(ex7_parsed)
             if days_left < 0:
-                text += f"🔴 КБП-7 (Ил-76 МД-М):: {ex7_md_m} (Просрочено на {abs(days_left)} дн.)\n"
+                text += f"🔴 КБП-7 (Ил-76 МД-М):: {formatted_date} (Просрочено на {abs(days_left)} дн.)\n"
             else:
-                text += f"🟢 КБП-7 (Ил-76 МД-М):: {ex7_md_m} (Действует (осталось {days_left} дн.))\n"
+                text += f"🟢 КБП-7 (Ил-76 МД-М):: {formatted_date} (Действует (осталось {days_left} дн.))\n"
     
     # КБП-4 (Ил-76 МД-90А)
     ex4_md_90a = user[11]
@@ -274,10 +295,11 @@ def generate_profile_text(user: tuple) -> str:
         if ex4_parsed:
             ex4_expiry = ex4_parsed + timedelta(days=EXERCISE_4_PERIOD)
             days_left = (ex4_expiry - now).days
+            formatted_date = format_date(ex4_parsed)
             if days_left < 0:
-                text += f"🔴 КБП-4 (Ил-76 МД-90А):: {ex4_md_90a} (Просрочено на {abs(days_left)} дн.)\n"
+                text += f"🔴 КБП-4 (Ил-76 МД-90А):: {formatted_date} (Просрочено на {abs(days_left)} дн.)\n"
             else:
-                text += f"🟢 КБП-4 (Ил-76 МД-90А):: {ex4_md_90a} (Действует (осталось {days_left} дн.))\n"
+                text += f"🟢 КБП-4 (Ил-76 МД-90А):: {formatted_date} (Действует (осталось {days_left} дн.))\n"
     
     # КБП-7 (Ил-76 МД-90А)
     ex7_md_90a = user[12]
@@ -286,16 +308,17 @@ def generate_profile_text(user: tuple) -> str:
         if ex7_parsed:
             ex7_expiry = ex7_parsed + timedelta(days=EXERCISE_7_PERIOD)
             days_left = (ex7_expiry - now).days
+            formatted_date = format_date(ex7_parsed)
             if days_left < 0:
-                text += f"🔴 КБП-7 (Ил-76 МД-90А):: {ex7_md_90a} (Просрочено на {abs(days_left)} дн.)\n"
+                text += f"🔴 КБП-7 (Ил-76 МД-90А):: {formatted_date} (Просрочено на {abs(days_left)} дн.)\n"
             else:
-                text += f"🟢 КБП-7 (Ил-76 МД-90А):: {ex7_md_90a} (Действует (осталось {days_left} дн.))\n"
+                text += f"🟢 КБП-7 (Ил-76 МД-90А):: {formatted_date} (Действует (осталось {days_left} дн.))\n"
     
     # Прыжки с парашютом
     parachute = user[13]
     if parachute:
         parachute_lower = parachute.lower().strip()
-        # Проверяем на освобожден и синонимы
+        # Проверяем на освобождение и синонимы
         if parachute_lower in ['освобожден', 'освобождён', 'осв', 'освобождение', 'не требуется', 'нет', '-']:
             text += f"⚪ Прыжки с парашютом: Освобожден\n"
         else:
@@ -303,10 +326,11 @@ def generate_profile_text(user: tuple) -> str:
             if parachute_parsed:
                 parachute_expiry = parachute_parsed + timedelta(days=PARACHUTE_PERIOD)
                 days_left = (parachute_expiry - now).days
+                formatted_date = format_date(parachute_parsed)
                 if days_left < 0:
-                    text += f"🔴 Прыжки с парашютом:: {parachute} (Просрочено на {abs(days_left)} дн.)\n"
+                    text += f"🔴 Прыжки с парашютом:: {formatted_date} (Просрочено на {abs(days_left)} дн.)\n"
                 else:
-                    text += f"🟢 Прыжки с парашютом:: {parachute} (Действует (осталось {days_left} дн.))\n"
+                    text += f"🟢 Прыжки с парашютом:: {formatted_date} (Действует (осталось {days_left} дн.))\n"
             else:
                 text += f"⚪ Прыжки с парашютом: {parachute}\n"
     else:
