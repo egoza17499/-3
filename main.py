@@ -7,7 +7,7 @@ import asyncio
 import time
 import os
 from aiogram import Bot, Dispatcher
-from config import BOT_TOKEN, DB_NAME
+from config import BOT_TOKEN, DATABASE_URL
 from db_manager import db
 from health_server import start_health_server
 
