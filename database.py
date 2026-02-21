@@ -396,9 +396,11 @@ class Database:
             fetch=True
         )
         return result[0]['id'] if result else None
-        
+    
     def get_aerodrome_by_search(self, search_text: str):
         search_text = search_text.strip().lower()
+        logger.info(f"🔍 Поиск аэродрома: '{search_text}'")
+        
         conn = self.get_connection()
         try:
             with conn.cursor() as cursor:
@@ -410,6 +412,22 @@ class Database:
                     (f"%{search_text}%", f"%{search_text}%", f"%{search_text}%")
                 )
                 result = cursor.fetchone()
+                
+                if result:
+                    logger.info(f"✅ Найдено: {result['name']} ({result['city']})")
+                else:
+                    logger.warning(f"❌ Не найдено по запросу: {search_text}")
+                    
+                    # Проверим сколько всего аэродромов
+                    cursor.execute("SELECT COUNT(*) FROM aerodromes")
+                    count = cursor.fetchone()[0]
+                    logger.info(f"📊 Всего аэродромов в базе: {count}")
+                    
+                    # Покажем несколько примеров
+                    cursor.execute("SELECT name, city FROM aerodromes LIMIT 5")
+                    examples = cursor.fetchall()
+                    logger.info(f"📋 Примеры: {[e['name'] for e in examples]}")
+                
                 return result
         finally:
             self.release_connection(conn)
@@ -433,7 +451,7 @@ class Database:
                VALUES (%s, %s, %s)""",
             (aerodrome_id, phone_name, phone_number)
         )
-        
+    
     def get_aerodrome_phones(self, aerodrome_id: int):
         conn = self.get_connection()
         try:
