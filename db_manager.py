@@ -1,4 +1,4 @@
-# db_manager.py - Глобальный экземпляр базы данных
+# db_manager.py - глобальный экземпляр базы данных
 from database import Database
 from config import DB_NAME
 
