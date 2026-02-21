@@ -74,7 +74,18 @@ async def reg_leave(message: types.Message, state: FSMContext):
     if len(parts) != 2:
         await message.answer("❌ Ошибка! Введите две даты через дефис")
         return
-    await state.update_data(leave_start_date=parts[0].strip(), leave_end_date=parts[1].strip())
+    
+    leave_start = parts[0].strip()
+    leave_end = parts[1].strip()
+    
+    if not is_valid_date(leave_start) or not is_valid_date(leave_end):
+        await message.answer("❌ Неверный формат дат! Используйте: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
+        return
+    
+    await state.update_data(
+        leave_start_date=leave_start,
+        leave_end_date=leave_end
+    )
     await state.set_state(RegistrationState.vlk_date)
     await message.answer("5️⃣ Введите дату ВЛК (ДД.ММ.ГГГГ):")
 
@@ -132,7 +143,7 @@ async def reg_ex7_md_90a(message: types.Message, state: FSMContext):
 
 @router.message(RegistrationState.parachute_jump)
 async def reg_finish(message: types.Message, state: FSMContext):
-    if message.text.lower() in ['освобожден', 'освобождён', 'осв']:
+    if message.text.lower() in ['освобожден', 'освобождён', 'осв', 'освобождение']:
         parachute = 'освобожден'
     elif not is_valid_date(message.text):
         await message.answer("❌ Неверный формат! Используйте: ДД.ММ.ГГГГ или 'освобожден'")
