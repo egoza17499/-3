@@ -12,10 +12,9 @@ class Database:
         try:
             # Создаём пул соединений
             self.db_pool = pool.SimpleConnectionPool(
-    1, 10,
-    db_url,
-    cursor_factory=RealDictCursor
-)
+                1, 10,
+                db_url,
+                cursor_factory=RealDictCursor
             )
             if self.db_pool:
                 logger.info("✅ PostgreSQL подключена успешно!")
