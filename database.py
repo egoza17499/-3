@@ -398,39 +398,37 @@ class Database:
         return result[0]['id'] if result else None
     
     def get_aerodrome_by_search(self, search_text: str):
-        search_text = search_text.strip().lower()
-        logger.info(f"🔍 Поиск аэродрома: '{search_text}'")
-        
-        conn = self.get_connection()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """SELECT * FROM aerodromes 
-                       WHERE LOWER(name) LIKE %s 
-                       OR LOWER(city) LIKE %s 
-                       OR LOWER(airport_name) LIKE %s""",
-                    (f"%{search_text}%", f"%{search_text}%", f"%{search_text}%")
-                )
-                result = cursor.fetchone()
+    search_text = search_text.strip().lower()
+    logger.info(f"🔍 Поиск аэродрома: '{search_text}'")
+    
+    conn = self.get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """SELECT * FROM aerodromes 
+                   WHERE name ILIKE %s 
+                   OR city ILIKE %s 
+                   OR airport_name ILIKE %s""",
+                (f"%{search_text}%", f"%{search_text}%", f"%{search_text}%")
+            )
+            result = cursor.fetchone()
+            
+            if result:
+                logger.info(f"✅ Найдено: {result['name']} ({result['city']})")
+            else:
+                logger.warning(f"❌ Не найдено по запросу: {search_text}")
                 
-                if result:
-                    logger.info(f"✅ Найдено: {result['name']} ({result['city']})")
-                else:
-                    logger.warning(f"❌ Не найдено по запросу: {search_text}")
-                    
-                    # Проверим сколько всего аэродромов
-                    cursor.execute("SELECT COUNT(*) FROM aerodromes")
-                    count = cursor.fetchone()[0]
-                    logger.info(f"📊 Всего аэродромов в базе: {count}")
-                    
-                    # Покажем несколько примеров
-                    cursor.execute("SELECT name, city FROM aerodromes LIMIT 5")
-                    examples = cursor.fetchall()
-                    logger.info(f"📋 Примеры: {[e['name'] for e in examples]}")
+                cursor.execute("SELECT COUNT(*) FROM aerodromes")
+                count = cursor.fetchone()[0]
+                logger.info(f"📊 Всего аэродромов в базе: {count}")
                 
-                return result
-        finally:
-            self.release_connection(conn)
+                cursor.execute("SELECT name, city FROM aerodromes LIMIT 5")
+                examples = cursor.fetchall()
+                logger.info(f"📋 Примеры: {[e['name'] for e in examples]}")
+            
+            return result
+    finally:
+        self.release_connection(conn)
     
     def get_all_aerodromes_list(self):
         return self.execute_query("SELECT * FROM aerodromes ORDER BY name", fetch=True)
