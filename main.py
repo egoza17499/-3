@@ -8,7 +8,7 @@ import time
 import os
 from aiogram import Bot, Dispatcher
 from config import BOT_TOKEN, DB_NAME
-from db_manager import db  # <-- Импортируем db из db_manager
+from db_manager import db
 from health_server import start_health_server
 
 # Настройка логирования
@@ -59,7 +59,7 @@ def setup_routers():
 async def main():
     """Основная функция запуска бота"""
     
-    # Вызываем регистрацию роутеров ВНУТРИ main() (не на уровне модуля!)
+    # Вызываем регистрацию роутеров ВНУТРИ main()
     setup_routers()
     
     instance_id = f"instance_{os.getpid()}_{int(time.time())}"
