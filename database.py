@@ -397,17 +397,23 @@ class Database:
         )
         return result[0]['id'] if result else None
     
-    def get_aerodrome_by_search(self, search_text: str):
-        search_text = search_text.strip().lower()
-        result = self.execute_query(
-            """SELECT * FROM aerodromes 
-               WHERE LOWER(name) LIKE %s 
-               OR LOWER(city) LIKE %s 
-               OR LOWER(airport_name) LIKE %s""",
-            (f"%{search_text}%", f"%{search_text}%", f"%{search_text}%"),
-            fetch=True
-        )
-        return result[0] if result else None
+   def get_aerodrome_by_search(self, search_text: str):
+    search_text = search_text.strip().lower()
+    
+    conn = self.get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """SELECT * FROM aerodromes 
+                   WHERE LOWER(name) LIKE %s 
+                   OR LOWER(city) LIKE %s 
+                   OR LOWER(airport_name) LIKE %s""",
+                (f"%{search_text}%", f"%{search_text}%", f"%{search_text}%")
+            )
+            result = cursor.fetchone()
+            return result
+    finally:
+        self.release_connection(conn)
     
     def get_all_aerodromes_list(self):
         return self.execute_query("SELECT * FROM aerodromes ORDER BY name", fetch=True)
@@ -430,11 +436,16 @@ class Database:
         )
     
     def get_aerodrome_phones(self, aerodrome_id: int):
-        return self.execute_query(
-            "SELECT * FROM aerodrome_phones WHERE aerodrome_id = %s ORDER BY phone_name",
-            (aerodrome_id,),
-            fetch=True
-        )
+    conn = self.get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM aerodrome_phones WHERE aerodrome_id = %s ORDER BY phone_name",
+                (aerodrome_id,)
+            )
+            return cursor.fetchall()
+    finally:
+        self.release_connection(conn)
     
     def delete_aerodrome_phone(self, phone_id: int):
         self.execute_query("DELETE FROM aerodrome_phones WHERE id = %s", (phone_id,))
