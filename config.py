@@ -1,6 +1,6 @@
 import os
 
-# Telegram Bot - читаем из переменных окружения Render
+# Telegram Bot
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_ID = int(os.getenv("GROUP_ID", "-1003546878934"))
 TOPIC_ID = int(os.getenv("TOPIC_ID", "51"))
@@ -9,8 +9,8 @@ TOPIC_ID = int(os.getenv("TOPIC_ID", "51"))
 MAIN_ADMIN_ID = int(os.getenv("MAIN_ADMIN_ID", "393293807"))
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "393293807").split(",")]
 
-# Database
-DB_NAME = os.getenv("DB_NAME", "bot_database.db")
+# Database - PostgreSQL URL
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Date format
 DATE_FORMAT = "%d.%m.%Y"
@@ -32,6 +32,6 @@ AIRCRAFT_TYPES = {
 
 # Проверки
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не найден! Добавьте переменную окружения BOT_TOKEN в Render")
-
-print("✅ Конфигурация загружена успешно!")
+    raise ValueError("BOT_TOKEN не найден в переменных окружения!")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL не найден в переменных окружения!")
