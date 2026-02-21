@@ -375,7 +375,24 @@ class Database:
         )
     
     def search_aerodromes(self, keyword: str):
-        return []
+        """Поиск аэродромов по ключевому слову"""
+        keyword = keyword.strip().lower()
+        
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """SELECT name, city, airport_name FROM aerodromes 
+                       WHERE LOWER(name) ILIKE %s 
+                       OR LOWER(city) ILIKE %s 
+                       OR LOWER(airport_name) ILIKE %s
+                       LIMIT 10""",
+                    (f"%{keyword}%", f"%{keyword}%", f"%{keyword}%")
+                )
+                results = cursor.fetchall()
+                return results
+        finally:
+            self.release_connection(conn)
     
     # ==================== НОВЫЕ МЕТОДЫ ДЛЯ БАЗЫ ЗНАНИЙ ====================
     
@@ -389,6 +406,7 @@ class Database:
         return result[0]['id'] if result else None
     
     def get_aerodrome_by_search(self, search_text: str):
+        """Поиск аэродрома по названию или городу"""
         search_text = search_text.strip().lower()
         logger.info(f"🔍 Поиск аэродрома: '{search_text}'")
         
