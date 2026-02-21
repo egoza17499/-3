@@ -5,9 +5,16 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_ID = int(os.getenv("GROUP_ID", "-1003546878934"))
 TOPIC_ID = int(os.getenv("TOPIC_ID", "51"))
 
-# Admin settings
+# Admin settings - по ID
 MAIN_ADMIN_ID = int(os.getenv("MAIN_ADMIN_ID", "393293807"))
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "393293807").split(",")]
+
+# Admin settings - по username (без @)
+ADMIN_USERNAMES_RAW = os.getenv("ADMIN_USERNAMES", "")
+if ADMIN_USERNAMES_RAW:
+    ADMIN_USERNAMES = [u.strip().lstrip('@') for u in ADMIN_USERNAMES_RAW.split(",") if u.strip()]
+else:
+    ADMIN_USERNAMES = []
 
 # Database - PostgreSQL URL
 DATABASE_URL = os.getenv("DATABASE_URL")
