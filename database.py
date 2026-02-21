@@ -126,7 +126,6 @@ class Database:
         return None
     
     def get_all_users(self):
-        """Получение всех пользователей (возвращает кортежи как get_user)"""
         result = self.execute_query("SELECT * FROM users WHERE is_registered = TRUE", fetch=True)
         if result:
             users = []
@@ -151,6 +150,69 @@ class Database:
                 ))
             return users
         return []
+    
+    def search_users(self, search_text: str):
+        """Поиск пользователей по ФИО"""
+        search_text = search_text.strip().lower()
+        if not search_text:
+            return []
+        
+        result = self.execute_query(
+            """SELECT * FROM users WHERE is_registered = TRUE 
+               AND (LOWER(fio) LIKE %s OR LOWER(username) ILIKE %s)""",
+            (f"%{search_text}%", f"%{search_text}%"),
+            fetch=True
+        )
+        
+        if result:
+            users = []
+            for user in result:
+                users.append((
+                    user['user_id'],
+                    user['username'],
+                    user['registered_at'],
+                    user['fio'],
+                    user['rank'],
+                    user['qualification'],
+                    user['leave_start_date'],
+                    user['leave_end_date'],
+                    user['vlk_date'],
+                    user['umo_date'],
+                    user['exercise_4_md_m_date'],
+                    user['exercise_7_md_m_date'],
+                    user['exercise_4_md_90a_date'],
+                    user['exercise_7_md_90a_date'],
+                    user['parachute_jump_date'],
+                    user['is_registered']
+                ))
+            return users
+        return []
+    
+    def get_users_ready_to_fly(self):
+        """Получить пользователей готовых к полётам"""
+        all_users = self.get_all_users()
+        ready_users = []
+        
+        for user in all_users:
+            from validators import check_flight_ban
+            bans = check_flight_ban(user)
+            if not bans:
+                ready_users.append(user)
+        
+        return ready_users
+    
+    def get_users_cannot_fly(self):
+        """Получить пользователей кто не может летать"""
+        all_users = self.get_all_users()
+        cannot_fly_users = []
+        
+        for user in all_users:
+            from validators import check_flight_ban
+            bans = check_flight_ban(user)
+            if bans:
+                cannot_fly_users.append(user)
+        
+        return cannot_fly_users
     
     def set_registration_complete(self, user_id: int):
         self.execute_query(
