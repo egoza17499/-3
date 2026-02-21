@@ -44,7 +44,6 @@ class Database:
             self.release_connection(conn)
     
     def create_tables(self):
-        # Таблица пользователей
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
@@ -66,7 +65,6 @@ class Database:
             )
         """)
         
-        # Таблица админов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS admins (
                 id SERIAL PRIMARY KEY,
@@ -77,7 +75,6 @@ class Database:
             )
         """)
         
-        # Таблица блокировок
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS instance_lock (
                 id SERIAL PRIMARY KEY,
@@ -87,7 +84,6 @@ class Database:
             )
         """)
         
-        # Таблица аэродромов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS aerodromes (
                 id SERIAL PRIMARY KEY,
@@ -100,7 +96,6 @@ class Database:
             )
         """)
         
-        # Таблица телефонов аэродромов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS aerodrome_phones (
                 id SERIAL PRIMARY KEY,
@@ -111,7 +106,6 @@ class Database:
             )
         """)
         
-        # Таблица документов аэродромов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS aerodrome_documents (
                 id SERIAL PRIMARY KEY,
@@ -123,7 +117,6 @@ class Database:
             )
         """)
         
-        # Таблица блоков безопасности
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS safety_blocks (
                 id SERIAL PRIMARY KEY,
@@ -134,7 +127,6 @@ class Database:
             )
         """)
         
-        # Таблица знаний по самолётам
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS aircraft_knowledge (
                 id SERIAL PRIMARY KEY,
@@ -387,7 +379,6 @@ class Database:
     
     # ==================== НОВЫЕ МЕТОДЫ ДЛЯ БАЗЫ ЗНАНИЙ ====================
     
-    # АЭРОДРОМЫ
     def add_aerodrome(self, name: str, city: str, airport_name: str, housing_info: str, created_by: int):
         result = self.execute_query(
             """INSERT INTO aerodromes (name, city, airport_name, housing_info, created_by) 
@@ -398,37 +389,37 @@ class Database:
         return result[0]['id'] if result else None
     
     def get_aerodrome_by_search(self, search_text: str):
-    search_text = search_text.strip().lower()
-    logger.info(f"🔍 Поиск аэродрома: '{search_text}'")
-    
-    conn = self.get_connection()
+        search_text = search_text.strip().lower()
+        logger.info(f"🔍 Поиск аэродрома: '{search_text}'")
+        
+        conn = self.get_connection()
         try:
             with conn.cursor() as cursor:
-            cursor.execute(
-                """SELECT * FROM aerodromes 
-                   WHERE name ILIKE %s 
-                   OR city ILIKE %s 
-                   OR airport_name ILIKE %s""",
-                (f"%{search_text}%", f"%{search_text}%", f"%{search_text}%")
-            )
-            result = cursor.fetchone()
-            
-            if result:
-                logger.info(f"✅ Найдено: {result['name']} ({result['city']})")
-            else:
-                logger.warning(f"❌ Не найдено по запросу: {search_text}")
+                cursor.execute(
+                    """SELECT * FROM aerodromes 
+                       WHERE name ILIKE %s 
+                       OR city ILIKE %s 
+                       OR airport_name ILIKE %s""",
+                    (f"%{search_text}%", f"%{search_text}%", f"%{search_text}%")
+                )
+                result = cursor.fetchone()
                 
-                cursor.execute("SELECT COUNT(*) FROM aerodromes")
-                count = cursor.fetchone()[0]
-                logger.info(f"📊 Всего аэродромов в базе: {count}")
+                if result:
+                    logger.info(f"✅ Найдено: {result['name']} ({result['city']})")
+                else:
+                    logger.warning(f"❌ Не найдено по запросу: {search_text}")
+                    
+                    cursor.execute("SELECT COUNT(*) FROM aerodromes")
+                    count = cursor.fetchone()[0]
+                    logger.info(f"📊 Всего аэродромов в базе: {count}")
+                    
+                    cursor.execute("SELECT name, city FROM aerodromes LIMIT 5")
+                    examples = cursor.fetchall()
+                    logger.info(f"📋 Примеры: {[e['name'] for e in examples]}")
                 
-                cursor.execute("SELECT name, city FROM aerodromes LIMIT 5")
-                examples = cursor.fetchall()
-                logger.info(f"📋 Примеры: {[e['name'] for e in examples]}")
-            
-            return result
-    finally:
-        self.release_connection(conn)
+                return result
+        finally:
+            self.release_connection(conn)
     
     def get_all_aerodromes_list(self):
         return self.execute_query("SELECT * FROM aerodromes ORDER BY name", fetch=True)
@@ -442,7 +433,6 @@ class Database:
     def delete_aerodrome(self, aerodrome_id: int):
         self.execute_query("DELETE FROM aerodromes WHERE id = %s", (aerodrome_id,))
     
-    # ТЕЛЕФОНЫ
     def add_aerodrome_phone(self, aerodrome_id: int, phone_name: str, phone_number: str):
         self.execute_query(
             """INSERT INTO aerodrome_phones (aerodrome_id, phone_name, phone_number) 
@@ -465,7 +455,6 @@ class Database:
     def delete_aerodrome_phone(self, phone_id: int):
         self.execute_query("DELETE FROM aerodrome_phones WHERE id = %s", (phone_id,))
     
-    # ДОКУМЕНТЫ
     def add_aerodrome_document(self, aerodrome_id: int, doc_name: str, doc_type: str, file_id: str):
         self.execute_query(
             """INSERT INTO aerodrome_documents (aerodrome_id, doc_name, doc_type, file_id) 
@@ -483,7 +472,6 @@ class Database:
     def delete_aerodrome_document(self, doc_id: int):
         self.execute_query("DELETE FROM aerodrome_documents WHERE id = %s", (doc_id,))
     
-    # БЛОКИ БЕЗОПАСНОСТИ
     def add_safety_block(self, block_number: int, block_text: str, created_by: int):
         self.execute_query(
             """INSERT INTO safety_blocks (block_number, block_text, created_by) 
@@ -511,7 +499,6 @@ class Database:
     def delete_safety_block(self, block_number: int):
         self.execute_query("DELETE FROM safety_blocks WHERE block_number = %s", (block_number,))
     
-    # ЗНАНИЯ ПО САМОЛЕТАМ
     def add_aircraft_knowledge(self, aircraft_type: str, knowledge_name: str, knowledge_text: str, file_id: str = None):
         self.execute_query(
             """INSERT INTO aircraft_knowledge (aircraft_type, knowledge_name, knowledge_text, file_id) 
