@@ -1,5 +1,6 @@
 import psycopg2
 from psycopg2 import pool
+from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from config import DATABASE_URL
 import logging
