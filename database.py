@@ -402,8 +402,8 @@ class Database:
     logger.info(f"🔍 Поиск аэродрома: '{search_text}'")
     
     conn = self.get_connection()
-    try:
-        with conn.cursor() as cursor:
+        try:
+            with conn.cursor() as cursor:
             cursor.execute(
                 """SELECT * FROM aerodromes 
                    WHERE name ILIKE %s 
