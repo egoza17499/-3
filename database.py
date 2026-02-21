@@ -396,8 +396,8 @@ class Database:
             fetch=True
         )
         return result[0]['id'] if result else None
-    
-   def get_aerodrome_by_search(self, search_text: str):
+        
+    def get_aerodrome_by_search(self, search_text: str):
     search_text = search_text.strip().lower()
     
     conn = self.get_connection()
@@ -434,7 +434,7 @@ class Database:
                VALUES (%s, %s, %s)""",
             (aerodrome_id, phone_name, phone_number)
         )
-    
+        
     def get_aerodrome_phones(self, aerodrome_id: int):
     conn = self.get_connection()
     try:
