@@ -43,4 +43,6 @@ async def admin_functions(message: types.Message):
     if user_id not in ADMIN_IDS and not db.check_admin_status(user_id):
         await message.answer("❌ У вас нет доступа")
         return
-    await message.answer("🛡 Административные функции")
+    # Показываем админское меню с inline клавиатурой
+    from handlers.admin import get_admin_keyboard
+    await message.answer("🛡 Административные функции\n\nВыберите действие:", reply_markup=get_admin_keyboard())
