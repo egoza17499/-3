@@ -7,6 +7,8 @@ import asyncio
 import time
 import os
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from config import BOT_TOKEN, DATABASE_URL
 from db_manager import db
 from health_server import start_health_server
@@ -19,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ИНИЦИАЛИЗАЦИЯ
 # ============================================================================
 
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 # ============================================================================
@@ -30,7 +32,7 @@ def setup_routers():
     """Импорт и регистрация всех роутеров"""
     logger.info("🔍 Начинаем импорт handlers...")
     
-    from handlers import registration, menu, profile, admin, search, welcome
+    from handlers import registration, menu, profile, admin, search, welcome, knowledge
     
     dp.include_router(registration.router)
     logger.info("✅ registration зарегистрирован")
@@ -49,6 +51,9 @@ def setup_routers():
     
     dp.include_router(welcome.router)
     logger.info("✅ welcome зарегистрирован")
+    
+    dp.include_router(knowledge.router)
+    logger.info("✅ knowledge зарегистрирован")
     
     logger.info("✅ Все роутеры зарегистрированы успешно!")
 
