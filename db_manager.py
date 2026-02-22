@@ -43,7 +43,7 @@ def get_aerodrome_phones(aerodrome_id: int):
 def get_aerodrome_documents(aerodrome_id: int):
     """Вернуть все документы аэродрома"""
     query = """
-        SELECT doc_name, doc_text
+        SELECT id, doc_name, doc_type, file_id
         FROM aerodrome_documents
         WHERE aerodrome_id = %s
         ORDER BY doc_name
