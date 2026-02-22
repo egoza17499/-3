@@ -1,15 +1,27 @@
-from aiogram import types, Dispatcher
+from aiogram import types, Router, F
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from db_manager import db
+from db_manager import get_db_connection
 import logging
 
 logger = logging.getLogger(__name__)
+router = Router()
 
 async def send_all_aerodromes_in_city(message: types.Message, city_name: str):
     """Отправить все аэродромы в городе"""
     try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
         # Ищем все аэродромы в городе (учитываем разные написания)
-        aerodromes = db.get_aerodromes_by_city(city_name)
+        cursor.execute("""
+            SELECT DISTINCT a.id, a.name, a.airport_name, a.housing_info
+            FROM aerodromes a
+            WHERE LOWER(a.city) = LOWER(%s) 
+               OR LOWER(a.name) ILIKE %s
+            ORDER BY a.airport_name, a.name
+        """, (city_name, f'%{city_name}%'))
+        
+        aerodromes = cursor.fetchall()
         
         if not aerodromes:
             await message.answer(f"❌ Аэродромы в городе {city_name} не найдены")
@@ -17,7 +29,7 @@ async def send_all_aerodromes_in_city(message: types.Message, city_name: str):
         
         # Если найден только один аэродром - показываем его сразу
         if len(aerodromes) == 1:
-            await show_aerodrome_details(message, aerodromes[0]['id'])
+            await show_aerodrome_details(message, aerodromes[0][0])
             return
         
         # Если несколько аэродромов - показываем список с выбором
@@ -27,17 +39,21 @@ async def send_all_aerodromes_in_city(message: types.Message, city_name: str):
         keyboard = InlineKeyboardMarkup(row_width=1)
         
         for aero in aerodromes:
-            display_name = aero['airport_name'] if aero['airport_name'] else aero['name']
+            aero_id, name, airport_name, housing = aero
+            display_name = airport_name if airport_name else name
             text += f"• {display_name}\n"
             
             keyboard.add(InlineKeyboardButton(
                 f"🛫 {display_name}",
-                callback_data=f"aerodrome_{aero['id']}"
+                callback_data=f"aerodrome_{aero_id}"
             ))
         
         keyboard.add(InlineKeyboardButton("🔙 Назад", callback_data="back_to_search"))
         
         await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        
+        cursor.close()
+        conn.close()
         
     except Exception as e:
         logger.error(f"Ошибка при поиске аэродромов в {city_name}: {e}")
@@ -46,30 +62,47 @@ async def send_all_aerodromes_in_city(message: types.Message, city_name: str):
 async def show_aerodrome_details(message: types.Message, aerodrome_id: int):
     """Показать подробную информацию об аэродроме"""
     try:
-        # Получаем информацию об аэродроме
-        aerodrome = db.get_aerodrome_by_id(aerodrome_id)
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        if not aerodrome:
+        # Получаем информацию об аэродроме
+        cursor.execute("""
+            SELECT name, city, airport_name, housing_info
+            FROM aerodromes
+            WHERE id = %s
+        """, (aerodrome_id,))
+        
+        aero_info = cursor.fetchone()
+        if not aero_info:
             await message.answer("❌ Аэродром не найден")
             return
         
+        name, city, airport_name, housing = aero_info
+        
         # Получаем телефоны
-        phones = db.get_aerodrome_phones(aerodrome_id)
+        cursor.execute("""
+            SELECT phone_name, phone_number
+            FROM aerodrome_phones
+            WHERE aerodrome_id = %s
+            ORDER BY phone_name
+        """, (aerodrome_id,))
+        
+        phones = cursor.fetchall()
         
         # Формируем сообщение
-        display_name = aerodrome['airport_name'] if aerodrome['airport_name'] else aerodrome['name']
+        display_name = airport_name if airport_name else name
         text = f"✈️ <b>{display_name}</b>\n"
-        text += f"🏙️ <b>Город:</b> {aerodrome['city']}\n"
+        text += f"🏙️ <b>Город:</b> {city}\n"
         
-        if aerodrome['airport_name'] and aerodrome['airport_name'] != aerodrome['name']:
-            text += f"📍 <b>Аэродром:</b> {aerodrome['airport_name']}\n"
+        if airport_name and airport_name != name:
+            text += f"📍 <b>Аэродром:</b> {airport_name}\n"
         
-        text += f"🏠 <b>Жилье:</b> {aerodrome['housing_info'] if aerodrome['housing_info'] else 'Уточняется'}\n\n"
+        text += f"🏠 <b>Жилье:</b> {housing if housing else 'Уточняется'}\n\n"
         
         if phones:
             text += "📞 <b>Полезные номера телефонов:</b>\n"
-            for phone in phones:
-                text += f"• {phone['phone_name']}: {phone['phone_number']}\n"
+            for phone_name, phone_number in phones:
+                text += f"• {phone_name}: {phone_number}\n"
         
         # Кнопки
         keyboard = InlineKeyboardMarkup(row_width=2)
@@ -78,10 +111,14 @@ async def show_aerodrome_details(message: types.Message, aerodrome_id: int):
         
         await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
         
+        cursor.close()
+        conn.close()
+        
     except Exception as e:
         logger.error(f"Ошибка при показе аэродрома {aerodrome_id}: {e}")
         await message.answer("❌ Произошла ошибка")
 
+@router.callback_query(F.data.startswith("aerodrome_"))
 async def callback_aerodrome_selection(callback: types.CallbackQuery):
     """Обработчик выбора аэродрома из списка"""
     if callback.data.startswith("aerodrome_"):
@@ -89,6 +126,6 @@ async def callback_aerodrome_selection(callback: types.CallbackQuery):
         await show_aerodrome_details(callback.message, aerodrome_id)
         await callback.answer()
 
-def register_multiple_aerodromes_handlers(dp: Dispatcher):
+def register_multiple_aerodromes_handlers(dp):
     """Регистрация обработчиков"""
-    dp.register_callback_handler(callback_aerodrome_selection, lambda c: c.data.startswith("aerodrome_"))
+    dp.include_router(router)
