@@ -1,6 +1,6 @@
 from aiogram import types, Dispatcher
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from database.database import get_db_connection
+from db_manager import db
 import logging
 
 logger = logging.getLogger(__name__)
