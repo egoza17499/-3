@@ -2,7 +2,12 @@ import logging
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from db_manager import db
+from db_manager import (
+    get_aerodromes_by_city,
+    get_aerodrome_by_id,
+    get_aerodrome_phones,
+    get_aerodrome_documents
+)
 from states import KnowledgeState
 
 logger = logging.getLogger(__name__)
@@ -41,8 +46,8 @@ async def aerodrome_search_handler(message: types.Message):
     search_text = message.text.strip()
     logger.info(f"✈️ Поиск аэродрома: '{search_text}'")
     
-    # Ищем ВСЕ аэродромы в городе (не только первый!)
-    aerodromes = db.get_aerodromes_by_city(search_text)
+    # Ищем ВСЕ аэродромы в городе
+    aerodromes = get_aerodromes_by_city(search_text)
     
     if not aerodromes:
         logger.warning(f"❌ Не найдено по запросу: {search_text}")
@@ -99,7 +104,7 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
     text += f"\n🏠 Жилье: {housing}\n\n"
     
     # Телефоны
-    phones = db.get_aerodrome_phones(aerodrome['id'])
+    phones = get_aerodrome_phones(aerodrome['id'])
     if phones:
         text += "📞 Полезные номера телефонов:\n"
         for phone in phones:
@@ -107,7 +112,7 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
         text += "\n"
     
     # Документы
-    documents = db.get_aerodrome_documents(aerodrome['id'])
+    documents = get_aerodrome_documents(aerodrome['id'])
     
     keyboard = []
     
@@ -137,7 +142,7 @@ async def aerodrome_selected(callback: types.CallbackQuery):
     """Обработчик выбора аэродрома из списка"""
     try:
         aerodrome_id = int(callback.data.split("_")[-1])
-        aerodrome = db.get_aerodrome_by_id(aerodrome_id)
+        aerodrome = get_aerodrome_by_id(aerodrome_id)
         
         if not aerodrome:
             await callback.answer("❌ Аэродром не найден", show_alert=True)
@@ -163,7 +168,7 @@ async def info_aerodrome_back(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("aero_docs_"))
 async def aerodrome_documents_show(callback: types.CallbackQuery):
     aerodrome_id = int(callback.data.split("_")[-1])
-    documents = db.get_aerodrome_documents(aerodrome_id)
+    documents = get_aerodrome_documents(aerodrome_id)
     
     if not documents:
         await callback.answer("📄 Документы не найдены", show_alert=True)
