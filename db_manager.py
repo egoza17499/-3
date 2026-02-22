@@ -18,7 +18,7 @@ def get_aerodromes_by_city(city_name: str):
            OR LOWER(name) ILIKE %s
         ORDER BY airport_name, name
     """
-    return db.execute_query(query, city_name, f'%{city_name}%', fetch='all')
+    return db.execute_query(query, (city_name, f'%{city_name}%'), fetch=True)
 
 def get_aerodrome_by_id(aerodrome_id: int):
     """Вернуть аэродром по ID"""
@@ -27,7 +27,8 @@ def get_aerodrome_by_id(aerodrome_id: int):
         FROM aerodromes
         WHERE id = %s
     """
-    return db.execute_query(query, aerodrome_id, fetch='one')
+    result = db.execute_query(query, (aerodrome_id,), fetch=True)
+    return result[0] if result else None
 
 def get_aerodrome_phones(aerodrome_id: int):
     """Вернуть все телефоны аэродрома"""
@@ -37,7 +38,7 @@ def get_aerodrome_phones(aerodrome_id: int):
         WHERE aerodrome_id = %s
         ORDER BY phone_name
     """
-    return db.execute_query(query, aerodrome_id, fetch='all')
+    return db.execute_query(query, (aerodrome_id,), fetch=True)
 
 def get_aerodrome_documents(aerodrome_id: int):
     """Вернуть все документы аэродрома"""
@@ -47,7 +48,7 @@ def get_aerodrome_documents(aerodrome_id: int):
         WHERE aerodrome_id = %s
         ORDER BY doc_name
     """
-    return db.execute_query(query, aerodrome_id, fetch='all')
+    return db.execute_query(query, (aerodrome_id,), fetch=True)
 
 def get_aerodrome_by_search(search_text: str):
     """Найти аэродром по названию (возвращает первый результат)"""
@@ -60,7 +61,8 @@ def get_aerodrome_by_search(search_text: str):
         LIMIT 1
     """
     search_pattern = f'%{search_text}%'
-    return db.execute_query(query, search_pattern, search_pattern, search_pattern, fetch='one')
+    result = db.execute_query(query, (search_pattern, search_pattern, search_pattern), fetch=True)
+    return result[0] if result else None
 
 def get_safety_block_by_number(block_number: int):
     """Вернуть блок безопасности по номеру"""
@@ -69,4 +71,5 @@ def get_safety_block_by_number(block_number: int):
         FROM safety_blocks
         WHERE block_number = %s
     """
-    return db.execute_query(query, block_number, fetch='one')
+    result = db.execute_query(query, (block_number,), fetch=True)
+    return result[0] if result else None
