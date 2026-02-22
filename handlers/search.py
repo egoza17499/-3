@@ -1,20 +1,23 @@
 import logging
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-from aiogram.exceptions import AiogramContinuePropagation
 from db_manager import db
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-@router.message(lambda msg: msg.text not in ["👤 Мой профиль", "📚 Полезная информация", "🛡️ Административные функции"])
+# Обработчик для поиска ПОЛЬЗОВАТЕЛЕЙ
+# Фильтр: НЕ срабатывает когда пользователь в поиске аэродрома
+@router.message(
+    lambda msg: msg.text not in ["👤 Мой профиль", "📚 Полезная информация", "🛡️ Административные функции"]
+)
 async def search_users_handler(message: types.Message, state: FSMContext):
-    # Проверяем состояние — если пользователь в поиске аэродрома, пропускаем
+    # Проверяем состояние
     current_state = await state.get_state()
     
+    # Если пользователь в поиске аэродрома — просто выходим
     if current_state == "KnowledgeState:aerodrome_search":
-        # ВАЖНО: Пропускаем сообщение дальше!
-        raise AiogramContinuePropagation
+        return  # Выходим без обработки
     
     # Ищем ПОЛЬЗОВАТЕЛЕЙ
     search_text = message.text.strip()
