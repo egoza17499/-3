@@ -9,7 +9,7 @@ router = Router()
 async def send_all_aerodromes_in_city(message: types.Message, city_name: str):
     """Отправить все аэродромы в городе"""
     try:
-        # Ищем все аэродромы в городе (учитываем разные написания)
+        # Ищем ВСЕ аэродромы в городе (учитываем разные написания)
         aerodromes = await db.fetch_all(
             """
             SELECT DISTINCT id, name, city, airport_name, housing_info
