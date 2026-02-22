@@ -1,4 +1,4 @@
-# db_manager.py - Глобальный экземпляр базы данных и методы для работы с ней
+# db_manager.py - Глобальный экземпляр базы данных
 from database import Database
 from config import DATABASE_URL
 
