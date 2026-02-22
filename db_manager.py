@@ -1,4 +1,4 @@
-# db_manager.py - Глобальный экземпляр базы данных
+# db_manager.py - Глобальный экземпляр базы данных и методы для работы с ней
 from database import Database
 from config import DATABASE_URL
 
@@ -61,3 +61,12 @@ def get_aerodrome_by_search(search_text: str):
     """
     search_pattern = f'%{search_text}%'
     return db.fetch_one(query, search_pattern, search_pattern, search_pattern)
+
+def get_safety_block_by_number(block_number: int):
+    """Вернуть блок безопасности по номеру"""
+    query = """
+        SELECT block_number, block_text
+        FROM safety_blocks
+        WHERE block_number = %s
+    """
+    return db.fetch_one(query, block_number)
