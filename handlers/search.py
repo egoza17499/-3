@@ -1,6 +1,7 @@
 import logging
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import AiogramContinuePropagation
 from db_manager import db
 
 logger = logging.getLogger(__name__)
@@ -12,9 +13,10 @@ async def search_users_handler(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     
     if current_state == "KnowledgeState:aerodrome_search":
-        return  # Пропускаем — обрабатывает knowledge.py
+        # ВАЖНО: Пропускаем сообщение дальше!
+        raise AiogramContinuePropagation
     
-    # Ищем ПОЛЬЗОВАТЕЛЕЙ (не аэродромы!)
+    # Ищем ПОЛЬЗОВАТЕЛЕЙ
     search_text = message.text.strip()
     users = db.search_users(search_text)
     
