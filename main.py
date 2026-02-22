@@ -12,10 +12,12 @@ from aiogram.enums import ParseMode
 from config import BOT_TOKEN, DATABASE_URL
 from db_manager import db
 from health_server import start_health_server
-from handlers.multiple_aerodromes import register_multiple_aerodromes_handlers
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # ============================================================================
@@ -31,9 +33,21 @@ dp = Dispatcher()
 
 def setup_routers():
     """Импорт и регистрация всех роутеров"""
-    logger.info("🔍 Начинаем импорт handlers...")
-    from handlers import registration, menu, profile, admin, search, welcome, knowledge
+    logger.info("🔍 Начинаем регистрацию handlers...")
     
+    # Импортируем роутеры
+    from handlers import (
+        registration,
+        menu,
+        profile,
+        admin,
+        search,
+        welcome,
+        knowledge,
+        multiple_aerodromes  # ← Новый модуль для множественных аэродромов
+    )
+    
+    # Регистрируем в правильном порядке
     dp.include_router(registration.router)
     logger.info("✅ registration зарегистрирован")
     
@@ -47,8 +61,12 @@ def setup_routers():
     logger.info("✅ admin зарегистрирован")
     
     # ВАЖНО: knowledge ДОЛЖЕН БЫТЬ ДО search!
-    dp.include_router(knowledge.router)  # ← ПЕРЕМЕСТИТЬ СЮДА!
+    dp.include_router(knowledge.router)
     logger.info("✅ knowledge зарегистрирован")
+    
+    # Регистрируем обработчики для множественных аэродромов
+    multiple_aerodromes.register_multiple_aerodromes_handlers(dp)
+    logger.info("✅ multiple_aerodromes зарегистрирован")
     
     dp.include_router(search.router)
     logger.info("✅ search зарегистрирован")
@@ -65,7 +83,9 @@ def setup_routers():
 async def main():
     """Основная функция запуска бота"""
     
-    # Вызываем регистрацию роутеров ВНУТРИ main()
+    logger.info("🚀 Запуск бота...")
+    
+    # Вызываем регистрацию роутеров
     setup_routers()
     
     instance_id = f"instance_{os.getpid()}_{int(time.time())}"
@@ -120,17 +140,22 @@ async def main():
         heartbeat_future.cancel()
         await health_runner.cleanup()
         
+    except KeyboardInterrupt:
+        logger.info("⚠️ Получен сигнал остановки (Ctrl+C)")
     except Exception as e:
-        logger.error(f"❌ Ошибка в main: {e}")
+        logger.error(f"❌ Критическая ошибка в main: {e}")
         import traceback
         traceback.print_exc()
         raise
     finally:
         logger.info("🛑 Остановка бота...")
-        db.release_lock(instance_id)
-        await bot.session.close()
-        db.close()
-        logger.info("✅ Бот полностью остановлен")
+        try:
+            db.release_lock(instance_id)
+            await bot.session.close()
+            db.close()
+            logger.info("✅ Бот полностью остановлен")
+        except Exception as e:
+            logger.error(f"❌ Ошибка при остановке: {e}")
 
 # ============================================================================
 # ЗАПУСК
