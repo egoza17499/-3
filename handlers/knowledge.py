@@ -6,7 +6,8 @@ from db_manager import (
     get_aerodromes_by_city,
     get_aerodrome_by_id,
     get_aerodrome_phones,
-    get_aerodrome_documents
+    get_aerodrome_documents,
+    get_safety_block_by_number
 )
 from states import KnowledgeState
 
@@ -176,7 +177,8 @@ async def aerodrome_documents_show(callback: types.CallbackQuery):
     
     text = "📄 Полезные документы:\n\n"
     for doc in documents:
-        text += f"• {doc['doc_name']}\n"
+        doc_type = doc['doc_type'] if doc['doc_type'] else 'Документ'
+        text += f"• {doc['doc_name']} ({doc_type})\n"
     
     await callback.message.answer(text)
     await callback.answer()
@@ -196,7 +198,7 @@ async def info_safety(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("safety_block_"))
 async def safety_block_show(callback: types.CallbackQuery):
     block_number = int(callback.data.split("_")[-1])
-    block = db.get_safety_block_by_number(block_number)
+    block = get_safety_block_by_number(block_number)
     
     if not block:
         await callback.answer("❌ Блок не найден", show_alert=True)
