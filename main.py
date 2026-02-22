@@ -31,7 +31,6 @@ dp = Dispatcher()
 def setup_routers():
     """Импорт и регистрация всех роутеров"""
     logger.info("🔍 Начинаем импорт handlers...")
-    
     from handlers import registration, menu, profile, admin, search, welcome, knowledge
     
     dp.include_router(registration.router)
@@ -46,14 +45,15 @@ def setup_routers():
     dp.include_router(admin.router)
     logger.info("✅ admin зарегистрирован")
     
+    # ВАЖНО: knowledge ДОЛЖЕН БЫТЬ ДО search!
+    dp.include_router(knowledge.router)  # ← ПЕРЕМЕСТИТЬ СЮДА!
+    logger.info("✅ knowledge зарегистрирован")
+    
     dp.include_router(search.router)
     logger.info("✅ search зарегистрирован")
     
     dp.include_router(welcome.router)
     logger.info("✅ welcome зарегистрирован")
-    
-    dp.include_router(knowledge.router)
-    logger.info("✅ knowledge зарегистрирован")
     
     logger.info("✅ Все роутеры зарегистрированы успешно!")
 
