@@ -376,7 +376,7 @@ class Database:
         )
     
     def search_aerodromes(self, keyword: str):
-        """Поиск аэродромов по ключевому слову (для search.py)"""
+        """Поиск аэродромов по ключевому слову"""
         keyword = keyword.strip().lower()
         
         conn = self.get_connection()
@@ -394,8 +394,6 @@ class Database:
                 return results
         finally:
             self.release_connection(conn)
-    
-    # ==================== НОВЫЕ МЕТОДЫ ДЛЯ БАЗЫ ЗНАНИЙ ====================
     
     def add_aerodrome(self, name: str, city: str, airport_name: str, housing_info: str, created_by: int):
         result = self.execute_query(
