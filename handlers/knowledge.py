@@ -41,10 +41,10 @@ async def aerodrome_search_handler(message: types.Message):
     search_text = message.text.strip()
     logger.info(f"✈️ Поиск аэродрома: '{search_text}'")
     
-    # Ищем аэродром
-    aerodrome = db.get_aerodrome_by_search(search_text)
+    # Ищем ВСЕ аэродромы в городе (не только первый!)
+    aerodromes = db.get_aerodromes_by_city(search_text)
     
-    if not aerodrome:
+    if not aerodromes:
         logger.warning(f"❌ Не найдено по запросу: {search_text}")
         await message.answer(
             f"❌ Информация по запросу \"{search_text}\" не найдена.\n\n"
@@ -52,7 +52,41 @@ async def aerodrome_search_handler(message: types.Message):
         )
         return
     
-    logger.info(f"✅ Найдено: {aerodrome['name']} ({aerodrome['city']})")
+    logger.info(f"✅ Найдено аэродромов: {len(aerodromes)}")
+    
+    # Если найден только один аэродром - показываем его сразу
+    if len(aerodromes) == 1:
+        await show_aerodrome_details(message, aerodromes[0])
+        return
+    
+    # Если несколько аэродромов - показываем список с выбором
+    await show_aerodrome_selection(message, aerodromes, search_text)
+
+async def show_aerodrome_selection(message: types.Message, aerodromes: list, search_text: str):
+    """Показать список аэродромов для выбора"""
+    city_name = aerodromes[0]['city'] or search_text
+    
+    text = f"🏙️ <b>В городе {city_name} найдено аэродромов: {len(aerodromes)}</b>\n\n"
+    text += "Выберите нужный аэродром:\n\n"
+    
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    
+    for aero in aerodromes:
+        display_name = aero['airport_name'] if aero['airport_name'] else aero['name']
+        text += f"• {display_name}\n"
+        
+        keyboard.add(InlineKeyboardButton(
+            f"🛫 {display_name}",
+            callback_data=f"aerodrome_select_{aero['id']}"
+        ))
+    
+    keyboard.add(InlineKeyboardButton("🔙 Назад", callback_data="info_aerodrome_btn"))
+    
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+async def show_aerodrome_details(message: types.Message, aerodrome: dict):
+    """Показать подробную информацию об аэродроме"""
+    logger.info(f"✅ Показываем детали: {aerodrome['name']} ({aerodrome['city']})")
     
     # Формируем ответ
     city = aerodrome['city'] or aerodrome['name']
@@ -96,6 +130,25 @@ async def aerodrome_search_handler(message: types.Message):
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
     
     await message.answer(text, reply_markup=reply_markup)
+
+# Обработчик выбора аэродрома из списка
+@router.callback_query(F.data.startswith("aerodrome_select_"))
+async def aerodrome_selected(callback: types.CallbackQuery):
+    """Обработчик выбора аэродрома из списка"""
+    try:
+        aerodrome_id = int(callback.data.split("_")[-1])
+        aerodrome = db.get_aerodrome_by_id(aerodrome_id)
+        
+        if not aerodrome:
+            await callback.answer("❌ Аэродром не найден", show_alert=True)
+            return
+        
+        await show_aerodrome_details(callback.message, aerodrome)
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка при выборе аэродрома: {e}")
+        await callback.answer("❌ Произошла ошибка", show_alert=True)
 
 @router.callback_query(F.data == "info_aerodrome_btn")
 async def info_aerodrome_back(callback: types.CallbackQuery, state: FSMContext):
