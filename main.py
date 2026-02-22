@@ -12,6 +12,7 @@ from aiogram.enums import ParseMode
 from config import BOT_TOKEN, DATABASE_URL
 from db_manager import db
 from health_server import start_health_server
+from handlers.multiple_aerodromes import register_multiple_aerodromes_handlers
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
