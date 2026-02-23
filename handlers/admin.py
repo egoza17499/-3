@@ -194,6 +194,7 @@ async def admin_list_search_handler(message: types.Message):
             return
         
         if len(users) == 1:
+            # Показываем профиль с кнопками
             user = users[0]
             user_id = user[0]
             fio = user[3] if len(user) > 3 else "Не указано"
@@ -212,6 +213,7 @@ async def admin_list_search_handler(message: types.Message):
             keyboard = create_user_list_keyboard(user_id, fio)
             await message.answer(profile_text, reply_markup=keyboard, parse_mode="HTML")
         else:
+            # Показываем список с КНОПКАМИ-ФИО
             text = f"🔍 Найдено: {len(users)}\n\n"
             keyboard_buttons = []
             
@@ -227,7 +229,16 @@ async def admin_list_search_handler(message: types.Message):
                 
                 indicator, status_label, details = get_user_status_details(user)
                 
-                text += f"{i}. {indicator} <b>{fio_safe}</b>\n"
+                # ФИО как АКТИВНАЯ КНОПКА
+                fio_short = fio[:40] + "..." if len(fio) > 40 else fio
+                keyboard_buttons.append([
+                    InlineKeyboardButton(
+                        text=f"{i}. {indicator} {fio_short}",
+                        callback_data=f"admin_user_profile_{user_id}"
+                    )
+                ])
+                
+                # Дополнительная информация под кнопкой (не кликабельна)
                 text += f"   👤 @{username_safe} | 🎖 {rank_safe}\n"
                 
                 if details:
@@ -236,12 +247,8 @@ async def admin_list_search_handler(message: types.Message):
                         text += f"   <i>{detail_safe}</i>\n"
                 
                 text += "\n"
-                
-                fio_short = fio[:35] + "..." if len(fio) > 35 else fio
-                keyboard_buttons.append([
-                    InlineKeyboardButton(text=f"👤 {fio_short}", callback_data=f"admin_user_profile_{user_id}")
-                ])
             
+            # Кнопка "Назад"
             keyboard_buttons.append([InlineKeyboardButton(text="🔙 Назад к списку", callback_data="admin_list")])
             keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
             
