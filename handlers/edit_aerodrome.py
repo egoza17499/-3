@@ -158,6 +158,11 @@ async def edit_change_phone(callback: types.CallbackQuery, state: FSMContext):
     
     keyboard = []
     for phone in phones:
+        # ПРОВЕРКА: есть ли id у телефона
+        if 'id' not in phone or phone['id'] is None:
+            logger.error(f"❌ У телефона нет ID: {phone}")
+            continue
+            
         keyboard.append([InlineKeyboardButton(
             text=f"📱 {phone['phone_name']}: {phone['phone_number']}",
             callback_data=f"edit_phone_{phone['id']}"
@@ -167,6 +172,10 @@ async def edit_change_phone(callback: types.CallbackQuery, state: FSMContext):
         text="🔙 Назад",
         callback_data=f"edit_aerodrome_{aerodrome_id}"
     )])
+    
+    if not keyboard:
+        await callback.answer("❌ Нет доступных телефонов", show_alert=True)
+        return
     
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
     
