@@ -144,7 +144,7 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
     
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     
-    await message.answer(text, reply_markup=reply_markup)
+    await message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
 
 # Обработчик выбора аэродрома из списка
 @router.callback_query(F.data.startswith("aerodrome_select_"))
@@ -186,7 +186,7 @@ async def aerodrome_documents_show(callback: types.CallbackQuery):
     
     text = "📄 Полезные документы:\n\n"
     for doc in documents:
-        doc_type = doc['doc_type'] if doc.get('doc_type') else 'Документ'
+        doc_type = doc.get('doc_type') or 'Документ'
         text += f"• {doc['doc_name']} ({doc_type})\n"
     
     await callback.message.answer(text)
