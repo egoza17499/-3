@@ -33,7 +33,7 @@ def get_aerodrome_by_id(aerodrome_id: int):
 def get_aerodrome_phones(aerodrome_id: int):
     """Вернуть все телефоны аэродрома"""
     query = """
-        SELECT phone_name, phone_number
+        SELECT id, phone_name, phone_number
         FROM aerodrome_phones
         WHERE aerodrome_id = %s
         ORDER BY phone_name
@@ -49,6 +49,21 @@ def get_aerodrome_documents(aerodrome_id: int):
         ORDER BY doc_name
     """
     return db.execute_query(query, (aerodrome_id,), fetch=True)
+
+def add_aerodrome_phone(aerodrome_id: int, phone_name: str, phone_number: str):
+    """Добавить телефон аэродрома"""
+    query = """
+        INSERT INTO aerodrome_phones (aerodrome_id, phone_name, phone_number)
+        VALUES (%s, %s, %s)
+    """
+    db.execute_query(query, (aerodrome_id, phone_name, phone_number))
+
+def delete_aerodrome_phone(phone_id: int):
+    """Удалить телефон аэродрома"""
+    query = """
+        DELETE FROM aerodrome_phones WHERE id = %s
+    """
+    db.execute_query(query, (phone_id,))
 
 def get_aerodrome_by_search(search_text: str):
     """Найти аэродром по названию (возвращает первый результат)"""
