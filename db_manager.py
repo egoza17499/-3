@@ -179,6 +179,34 @@ def find_user_by_username(username: str):
     result = db.execute_query(query, (f"%{username_clean}%",), fetch=True)
     return result[0] if result else None
 
+def delete_user(user_id: int):
+    """Полностью удалить пользователя из базы данных"""
+    try:
+        # Сначала удаляем связанные записи (чтобы не было ошибок FK)
+        # Удаляем аэродромы созданные пользователем
+        db.execute_query("DELETE FROM aerodrome_phones WHERE aerodrome_id IN (SELECT id FROM aerodromes WHERE created_by = %s)", (user_id,))
+        db.execute_query("DELETE FROM aerodrome_documents WHERE aerodrome_id IN (SELECT id FROM aerodromes WHERE created_by = %s)", (user_id,))
+        db.execute_query("DELETE FROM aerodromes WHERE created_by = %s", (user_id,))
+        
+        # Удаляем блоки безопасности созданные пользователем
+        db.execute_query("DELETE FROM safety_blocks WHERE created_by = %s", (user_id,))
+        
+        # Удаляем знания по самолётам созданные пользователем
+        db.execute_query("DELETE FROM aircraft_knowledge WHERE created_by = %s", (user_id,))
+        
+        # Удаляем из админов
+        db.execute_query("DELETE FROM admins WHERE user_id = %s", (user_id,))
+        
+        # Удаляем пользователя
+        query = "DELETE FROM users WHERE user_id = %s"
+        db.execute_query(query, (user_id,))
+        
+        logger.info(f"✅ Пользователь {user_id} полностью удалён из БД")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка при удалении пользователя {user_id}: {e}")
+        return False
+
 # ============================================================
 # МЕТОДЫ ДЛЯ РАБОТЫ С АДМИНАМИ
 # ============================================================
