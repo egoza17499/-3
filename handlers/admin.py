@@ -6,7 +6,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_IDS
 from utils.admin_check import admin_required, admin_required_message, is_admin
 from validators import check_flight_ban, check_date_warnings, generate_profile_text
-from db_manager import db
+from db_manager import db, delete_user  # ✅ Импортируем функцию отдельно
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -399,7 +399,7 @@ async def admin_delete_user_execute(callback: types.CallbackQuery, state: FSMCon
             await callback.answer()
             return
         
-        success = db.delete_user(user_id)
+        success = delete_user(user_id) 
         
         if success:
             await callback.message.edit_text(
