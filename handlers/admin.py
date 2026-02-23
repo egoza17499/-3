@@ -264,6 +264,7 @@ async def admin_user_profile(callback: types.CallbackQuery):
     try:
         user_id = int(callback.data.split("_")[-1])
         
+        # Получаем пользователя из БД
         query = """
             SELECT user_id, username, registered_at, fio, rank, qualification,
                    leave_start_date, leave_end_date, vlk_date, umo_date,
@@ -272,26 +273,54 @@ async def admin_user_profile(callback: types.CallbackQuery):
                    parachute_jump_date, is_registered
             FROM users WHERE user_id = %s
         """
-        user = db.execute_query(query, (user_id,), fetch=True)
+        result = db.execute_query(query, (user_id,), fetch=True)
         
-        if not user:
+        if not result:
             await callback.answer("❌ Пользователь не найден", show_alert=True)
             return
         
-        user = user[0]
+        # Преобразуем в кортеж как в других функциях
+        user = result[0]
+        
+        # Проверяем что это кортеж/список
+        if isinstance(user, dict):
+            # Если словарь, преобразуем в кортеж
+            user = (
+                user.get('user_id', 0),
+                user.get('username', ''),
+                user.get('registered_at', ''),
+                user.get('fio', 'Не указано'),
+                user.get('rank', ''),
+                user.get('qualification', ''),
+                user.get('leave_start_date', ''),
+                user.get('leave_end_date', ''),
+                user.get('vlk_date', ''),
+                user.get('umo_date', ''),
+                user.get('exercise_4_md_m_date', ''),
+                user.get('exercise_7_md_m_date', ''),
+                user.get('exercise_4_md_90a_date', ''),
+                user.get('exercise_7_md_90a_date', ''),
+                user.get('parachute_jump_date', ''),
+                user.get('is_registered', True)
+            )
+        
         fio = user[3] if len(user) > 3 else "Не указано"
         
+        # Генерируем текст профиля
         profile_text = generate_profile_text(user)
         indicator, status_label, details = get_user_status_details(user)
         
+        # Добавляем индикатор
         profile_text = f"{indicator} <b>Статус: {status_label}</b>\n\n" + profile_text
         
+        # Добавляем детали
         if details:
             profile_text += f"\n<b>⚠️ Детали статуса:</b>\n"
             for detail in details:
                 detail_safe = str(detail).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
                 profile_text += f"• {detail_safe}\n"
         
+        # Кнопки
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад к списку", callback_data="admin_list")],
             [InlineKeyboardButton(text="🔙 Админ функции", callback_data="admin_functions_back")]
