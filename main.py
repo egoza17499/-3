@@ -44,7 +44,7 @@ def setup_routers():
         search,
         welcome,
         knowledge,
-        multiple_aerodromes  # ← Новый модуль для множественных аэродромов
+        edit_aerodrome  # ← Новый модуль для редактирования аэродромов
     )
     
     # Регистрируем в правильном порядке
@@ -64,9 +64,9 @@ def setup_routers():
     dp.include_router(knowledge.router)
     logger.info("✅ knowledge зарегистрирован")
     
-    # Регистрируем обработчики для множественных аэродромов
-    multiple_aerodromes.register_multiple_aerodromes_handlers(dp)
-    logger.info("✅ multiple_aerodromes зарегистрирован")
+    # Регистрируем обработчики для редактирования аэродромов
+    dp.include_router(edit_aerodrome.router)
+    logger.info("✅ edit_aerodrome зарегистрирован")
     
     dp.include_router(search.router)
     logger.info("✅ search зарегистрирован")
