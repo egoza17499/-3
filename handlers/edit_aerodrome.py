@@ -354,12 +354,32 @@ async def edit_back_to_aerodrome(callback: types.CallbackQuery, state: FSMContex
         await callback.answer("❌ Аэродром не найден", show_alert=True)
         return
     
-    # Импортируем функцию показа аэродрома
-    from handlers.knowledge import show_aerodrome_details
+    # Формируем текст (дублируем логику из knowledge.py)
+    city = aerodrome['city'] or aerodrome['name']
+    airport = aerodrome['airport_name'] or ""
+    housing = aerodrome['housing_info'] or "Информация уточняется"
     
-    # Удаляем сообщение с меню редактирования
-    await callback.message.delete()
+    text = f"🏙 {city}"
+    if airport:
+        text += f"\n✈️ Аэродром: {airport}"
+    text += f"\n🏠 Жилье: {housing}\n\n"
     
-    # Показываем информацию об аэродроме
-    await show_aerodrome_details(callback.message, aerodrome)
+    # Телефоны
+    phones = db.get_aerodrome_phones(aerodrome_id)
+    if phones:
+        text += "📞 Полезные номера телефонов:\n"
+        for phone in phones:
+            text += f"• {phone['phone_name']}: {phone['phone_number']}\n"
+        text += "\n"
+    
+    # Кнопки
+    keyboard_buttons = [
+        [InlineKeyboardButton(text="🔍 Повторный поиск", callback_data="info_aerodrome_btn")],
+        [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_aerodrome_{aerodrome_id}")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    
+    # Используем edit_text вместо удаления сообщения
+    await callback.message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
     await callback.answer()
