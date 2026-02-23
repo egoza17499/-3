@@ -31,14 +31,15 @@ def get_aerodrome_by_id(aerodrome_id: int):
     return result[0] if result else None
 
 def get_aerodrome_phones(aerodrome_id: int):
-    """Вернуть все телефоны аэродрома"""
+    """Вернуть все телефоны аэродрома (ОБЯЗАТЕЛЬНО с id!)"""
     query = """
         SELECT id, phone_name, phone_number
         FROM aerodrome_phones
         WHERE aerodrome_id = %s
         ORDER BY phone_name
     """
-    return db.execute_query(query, (aerodrome_id,), fetch=True)
+    result = db.execute_query(query, (aerodrome_id,), fetch=True)
+    return result if result else []
 
 def get_aerodrome_documents(aerodrome_id: int):
     """Вернуть все документы аэродрома"""
