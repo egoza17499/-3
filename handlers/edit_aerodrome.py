@@ -1,0 +1,300 @@
+from aiogram import Router, F, types
+from aiogram.fsm.context import FSMContext
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from db_manager import db
+from states import EditAerodromeState
+import logging
+
+logger = logging.getLogger(__name__)
+router = Router()
+
+# ============================================================
+# МЕНЮ РЕДАКТИРОВАНИЯ АЭРОДРОМА
+# ============================================================
+
+@router.callback_query(F.data.startswith("edit_aerodrome_"))
+async def edit_aerodrome_menu(callback: types.CallbackQuery, state: FSMContext):
+    """Показать меню редактирования аэродрома"""
+    aerodrome_id = int(callback.data.split("_")[-1])
+    
+    # Получаем информацию об аэродроме
+    aerodrome = db.get_aerodrome_by_id(aerodrome_id)
+    
+    if not aerodrome:
+        await callback.answer("❌ Аэродром не найден", show_alert=True)
+        return
+    
+    # Сохраняем ID в состоянии
+    await state.update_data(aerodrome_id=aerodrome_id)
+    
+    # Получаем телефоны
+    phones = db.get_aerodrome_phones(aerodrome_id)
+    
+    # Формируем текст
+    text = f"✏️ <b>Редактирование: {aerodrome['name']}</b>\n\n"
+    
+    if aerodrome['city']:
+        text += f"🏙 <b>Город:</b> {aerodrome['city']}\n"
+    
+    if aerodrome['airport_name'] and aerodrome['airport_name'] != aerodrome['name']:
+        text += f"✈️ <b>Аэродром:</b> {aerodrome['airport_name']}\n"
+    
+    text += f"🏠 <b>Жилье:</b> {aerodrome['housing_info'] or 'Не указано'}\n\n"
+    
+    if phones:
+        text += "📞 <b>Текущие телефоны:</b>\n"
+        for phone in phones:
+            text += f"• {phone['phone_name']}: {phone['phone_number']}\n"
+    else:
+        text += "📞 <b>Телефоны:</b> Не добавлены\n"
+    
+    text += "\n<b>Выберите действие:</b>"
+    
+    # Создаем меню
+    keyboard = [
+        [InlineKeyboardButton(text="📱 Добавить телефон", callback_data="edit_add_phone")],
+        [InlineKeyboardButton(text="✏️ Изменить телефон", callback_data="edit_change_phone")],
+        [InlineKeyboardButton(text="🏠 Изменить жилье", callback_data="edit_change_housing")],
+        [InlineKeyboardButton(text="🔙 Назад к аэродрому", callback_data=f"edit_back_{aerodrome_id}")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+    
+    await callback.message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
+    await callback.answer()
+
+# ============================================================
+# ДОБАВЛЕНИЕ ТЕЛЕФОНА
+# ============================================================
+
+@router.callback_query(F.data == "edit_add_phone")
+async def edit_add_phone(callback: types.CallbackQuery, state: FSMContext):
+    """Начать добавление телефона"""
+    await callback.message.edit_text(
+        "📱 <b>Добавление телефона</b>\n\n"
+        "Введите название телефона (например: АДП, Диспетчер, УС и т.д.):",
+        parse_mode="HTML"
+    )
+    await state.set_state(EditAerodromeState.add_phone_name)
+    await callback.answer()
+
+@router.message(EditAerodromeState.add_phone_name)
+async def edit_add_phone_name(message: types.Message, state: FSMContext):
+    """Сохраняем название телефона и запрашиваем номер"""
+    phone_name = message.text.strip()
+    await state.update_data(phone_name=phone_name)
+    
+    await message.answer(
+        "📱 <b>Введите номер телефона:</b>\n\n"
+        "Пример: 8-999-123-45-67",
+        parse_mode="HTML"
+    )
+    await state.set_state(EditAerodromeState.add_phone_number)
+
+@router.message(EditAerodromeState.add_phone_number)
+async def edit_add_phone_number(message: types.Message, state: FSMContext):
+    """Добавляем телефон в базу"""
+    phone_number = message.text.strip()
+    data = await state.get_data()
+    aerodrome_id = data.get('aerodrome_id')
+    phone_name = data.get('phone_name')
+    
+    # Добавляем телефон
+    db.add_aerodrome_phone(aerodrome_id, phone_name, phone_number)
+    
+    # Возвращаемся к меню редактирования
+    await callback_query_from_message(message, f"edit_aerodrome_{aerodrome_id}", state)
+    
+    await message.answer(
+        f"✅ <b>Телефон добавлен!</b>\n\n"
+        f"📱 {phone_name}: {phone_number}",
+        parse_mode="HTML"
+    )
+
+# ============================================================
+# ИЗМЕНЕНИЕ ТЕЛЕФОНА
+# ============================================================
+
+@router.callback_query(F.data == "edit_change_phone")
+async def edit_change_phone(callback: types.CallbackQuery, state: FSMContext):
+    """Показать список телефонов для изменения"""
+    data = await state.get_data()
+    aerodrome_id = data.get('aerodrome_id')
+    
+    phones = db.get_aerodrome_phones(aerodrome_id)
+    
+    if not phones:
+        await callback.answer("❌ Нет телефонов для изменения", show_alert=True)
+        return
+    
+    text = "✏️ <b>Выберите телефон для изменения:</b>\n\n"
+    
+    keyboard = []
+    for phone in phones:
+        keyboard.append([InlineKeyboardButton(
+            text=f"📱 {phone['phone_name']}: {phone['phone_number']}",
+            callback_data=f"edit_phone_{phone['id']}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data=f"edit_aerodrome_{aerodrome_id}"
+    )])
+    
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+    
+    await callback.message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("edit_phone_"))
+async def edit_phone_select(callback: types.CallbackQuery, state: FSMContext):
+    """Выбор действия для телефона"""
+    phone_id = int(callback.data.split("_")[-1])
+    await state.update_data(phone_id=phone_id)
+    
+    text = "✏️ <b>Что сделать с телефоном?</b>\n\n"
+    text += "Выберите действие:"
+    
+    keyboard = [
+        [InlineKeyboardButton(text="🔄 Изменить номер", callback_data="edit_phone_change_number")],
+        [InlineKeyboardButton(text="🗑️ Удалить телефон", callback_data="edit_phone_delete")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="edit_change_phone")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+    
+    await callback.message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data == "edit_phone_change_number")
+async def edit_phone_change_number(callback: types.CallbackQuery, state: FSMContext):
+    """Изменить номер телефона"""
+    await callback.message.edit_text(
+        "📱 <b>Введите новый номер телефона:</b>\n\n"
+        "Пример: 8-999-123-45-67",
+        parse_mode="HTML"
+    )
+    await state.set_state(EditAerodromeState.change_phone_number)
+    await callback.answer()
+
+@router.message(EditAerodromeState.change_phone_number)
+async def edit_phone_change_number_process(message: types.Message, state: FSMContext):
+    """Сохраняем новый номер телефона"""
+    new_number = message.text.strip()
+    data = await state.get_data()
+    phone_id = data.get('phone_id')
+    aerodrome_id = data.get('aerodrome_id')
+    
+    # Обновляем номер
+    db.execute_query(
+        "UPDATE aerodrome_phones SET phone_number = %s WHERE id = %s",
+        (new_number, phone_id)
+    )
+    
+    # Возвращаемся к меню редактирования
+    await callback_query_from_message(message, f"edit_aerodrome_{aerodrome_id}", state)
+    
+    await message.answer(
+        f"✅ <b>Номер телефона обновлен!</b>\n\n"
+        f"📱 Новый номер: {new_number}",
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "edit_phone_delete")
+async def edit_phone_delete(callback: types.CallbackQuery, state: FSMContext):
+    """Удалить телефон"""
+    data = await state.get_data()
+    phone_id = data.get('phone_id')
+    aerodrome_id = data.get('aerodrome_id')
+    
+    # Удаляем телефон
+    db.delete_aerodrome_phone(phone_id)
+    
+    # Возвращаемся к меню редактирования
+    await callback.message.edit_text(
+        "✅ <b>Телефон удален!</b>",
+        parse_mode="HTML"
+    )
+    await asyncio.sleep(1)
+    await callback_query_from_message(callback.message, f"edit_aerodrome_{aerodrome_id}", state)
+    await callback.answer()
+
+# ============================================================
+# ИЗМЕНЕНИЕ ИНФОРМАЦИИ О ЖИЛЬЕ
+# ============================================================
+
+@router.callback_query(F.data == "edit_change_housing")
+async def edit_change_housing(callback: types.CallbackQuery, state: FSMContext):
+    """Начать изменение информации о жилье"""
+    data = await state.get_data()
+    aerodrome_id = data.get('aerodrome_id')
+    
+    aerodrome = db.get_aerodrome_by_id(aerodrome_id)
+    
+    await callback.message.edit_text(
+        f"🏠 <b>Изменение информации о жилье</b>\n\n"
+        f"Текущая информация: {aerodrome['housing_info'] or 'Не указано'}\n\n"
+        f"Введите новую информацию о жилье:",
+        parse_mode="HTML"
+    )
+    await state.set_state(EditAerodromeState.change_housing)
+    await callback.answer()
+
+@router.message(EditAerodromeState.change_housing)
+async def edit_change_housing_process(message: types.Message, state: FSMContext):
+    """Сохраняем новую информацию о жилье"""
+    housing_info = message.text.strip()
+    data = await state.get_data()
+    aerodrome_id = data.get('aerodrome_id')
+    
+    # Обновляем информацию
+    db.update_aerodrome(aerodrome_id, housing_info=housing_info)
+    
+    # Возвращаемся к меню редактирования
+    await callback_query_from_message(message, f"edit_aerodrome_{aerodrome_id}", state)
+    
+    await message.answer(
+        f"✅ <b>Информация о жилье обновлена!</b>\n\n"
+        f"🏠 {housing_info}",
+        parse_mode="HTML"
+    )
+
+# ============================================================
+# НАЗАД К АЭРОДРОМУ
+# ============================================================
+
+@router.callback_query(F.data.startswith("edit_back_"))
+async def edit_back_to_aerodrome(callback: types.CallbackQuery, state: FSMContext):
+    """Вернуться к просмотру аэродрома"""
+    aerodrome_id = int(callback.data.split("_")[-1])
+    
+    # Очищаем состояние
+    await state.clear()
+    
+    # Получаем информацию об аэродроме
+    aerodrome = db.get_aerodrome_by_id(aerodrome_id)
+    
+    if not aerodrome:
+        await callback.answer("❌ Аэродром не найден", show_alert=True)
+        return
+    
+    # Показываем информацию об аэродроме (импортируем функцию из knowledge.py)
+    from handlers.knowledge import show_aerodrome_details
+    await callback.message.delete()
+    await show_aerodrome_details(callback.message, aerodrome)
+    await callback.answer()
+
+# ============================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================================
+
+async def callback_query_from_message(message: types.Message, callback_data: str, state: FSMContext):
+    """Эмулировать callback query для возврата к меню"""
+    await state.clear()
+    # Просто ждем немного и показываем меню заново
+    await asyncio.sleep(0.5)
+
+def register_edit_aerodrome_handlers(dp: Router):
+    """Регистрация обработчиков"""
+    dp.include_router(router)
+  
