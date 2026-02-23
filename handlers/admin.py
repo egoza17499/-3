@@ -3,16 +3,12 @@ from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from utils.admin_check import admin_required, admin_required_message, is_admin
+from config import ADMIN_IDS
 from validators import check_flight_ban, check_date_warnings, generate_profile_text
 from db_manager import db
 
 logger = logging.getLogger(__name__)
 router = Router()
-
-# ============================================================
-# СОСТОЯНИЯ
-# ============================================================
 
 class AddAdminState(StatesGroup):
     username = State()
@@ -45,10 +41,6 @@ class AdminKnowledgeState(StatesGroup):
     aircraft_add_text = State()
     aircraft_add_file = State()
 
-# ============================================================
-# КЛАВИАТУРЫ
-# ============================================================
-
 def get_admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📋 Список пользователей", callback_data="admin_list")],
@@ -59,35 +51,20 @@ def get_admin_keyboard():
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
     ])
 
-# ============================================================
-# АДМИН МЕНЮ
-# ============================================================
-
 @router.callback_query(lambda c: c.data == "admin_back")
-@admin_required
 async def admin_back(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
+    is_admin = callback.from_user.id in ADMIN_IDS or db.check_admin_status(callback.from_user.id, callback.from_user.username)
     from handlers.menu import get_main_keyboard
-    await callback.message.edit_text("Главное меню", reply_markup=get_main_keyboard(True))
+    await callback.message.edit_text("Главное меню", reply_markup=get_main_keyboard(is_admin))
     await callback.answer()
-
-@router.callback_query(lambda c: c.data == "admin_functions_back")
-@admin_required
-async def admin_functions_back(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    
-    text = "🛡 Административные функции\n\nВыберите действие:"
-    
-    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
-    await callback.answer()
-
-# ============================================================
-# СПИСОК ПОЛЬЗОВАТЕЛЕЙ
-# ============================================================
 
 @router.callback_query(lambda c: c.data == "admin_list")
-@admin_required
 async def admin_list(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
+        await callback.answer("❌ У вас нет доступа", show_alert=True)
+        return
+    
     users = db.get_all_users()
     
     if not users:
@@ -134,7 +111,6 @@ async def admin_list(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 @router.message(AdminListState.waiting_for_search)
-@admin_required_message
 async def admin_list_search_handler(message: types.Message):
     search_text = message.text.strip()
     
@@ -195,13 +171,25 @@ async def admin_list_search_handler(message: types.Message):
         
         await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
 
-# ============================================================
-# СТАТИСТИКА
-# ============================================================
+@router.callback_query(lambda c: c.data == "admin_functions_back")
+async def admin_functions_back(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
+        await callback.answer("❌ У вас нет доступа", show_alert=True)
+        return
+    
+    text = "🛡 Административные функции\n\nВыберите действие:"
+    
+    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
+    await callback.answer()
 
 @router.callback_query(lambda c: c.data == "admin_stats")
-@admin_required
 async def admin_stats(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
+        await callback.answer("❌ У вас нет доступа", show_alert=True)
+        return
+    
     users = db.get_all_users()
     total = len(users) if users else 0
     
@@ -227,7 +215,6 @@ async def admin_stats(callback: types.CallbackQuery):
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "admin_stats_ready")
-@admin_required
 async def admin_stats_show_ready(callback: types.CallbackQuery):
     users = db.get_users_ready_to_fly()
     
@@ -253,7 +240,6 @@ async def admin_stats_show_ready(callback: types.CallbackQuery):
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "admin_stats_cannot")
-@admin_required
 async def admin_stats_show_cannot(callback: types.CallbackQuery):
     users = db.get_users_cannot_fly()
     
@@ -284,13 +270,14 @@ async def admin_stats_show_cannot(callback: types.CallbackQuery):
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
-# ============================================================
-# УПРАВЛЕНИЕ БАЗОЙ ЗНАНИЙ
-# ============================================================
+# ==================== УПРАВЛЕНИЕ БАЗОЙ ЗНАНИЙ ====================
 
 @router.callback_query(lambda c: c.data == "admin_knowledge")
-@admin_required
 async def admin_knowledge(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
+        await callback.answer("❌ У вас нет доступа", show_alert=True)
+        return
+    
     text = "📚 Управление базой знаний\n\n"
     text += "Выберите раздел:\n\n"
     text += "✈️ Аэродромы\n"
@@ -307,12 +294,9 @@ async def admin_knowledge(callback: types.CallbackQuery):
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
-# ============================================================
-# АЭРОДРОМЫ (АДМИН)
-# ============================================================
+# ==================== АЭРОДРОМЫ (АДМИН) ====================
 
 @router.callback_query(lambda c: c.data == "admin_knowledge_aerodromes")
-@admin_required
 async def admin_knowledge_aerodromes(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить аэродром", callback_data="admin_aero_add")],
@@ -328,7 +312,6 @@ async def admin_knowledge_aerodromes(callback: types.CallbackQuery):
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "admin_aero_add")
-@admin_required
 async def admin_aero_add_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "➕ Добавление аэродрома\n\n"
@@ -339,14 +322,12 @@ async def admin_aero_add_start(callback: types.CallbackQuery, state: FSMContext)
     await callback.answer()
 
 @router.message(AdminKnowledgeState.aero_add_name)
-@admin_required_message
 async def admin_aero_add_name(message: types.Message, state: FSMContext):
     await state.update_data(aero_name=message.text.strip())
     await message.answer("Теперь введите название аэродрома (если отличается от города):\n\nПример: Стригино\n\nИли напишите 'пропустить':")
     await state.set_state(AdminKnowledgeState.aero_add_airport)
 
 @router.message(AdminKnowledgeState.aero_add_airport)
-@admin_required_message
 async def admin_aero_add_airport(message: types.Message, state: FSMContext):
     airport = message.text.strip()
     if airport.lower() == 'пропустить':
@@ -356,7 +337,6 @@ async def admin_aero_add_airport(message: types.Message, state: FSMContext):
     await state.set_state(AdminKnowledgeState.aero_add_housing)
 
 @router.message(AdminKnowledgeState.aero_add_housing)
-@admin_required_message
 async def admin_aero_add_housing(message: types.Message, state: FSMContext):
     data = await state.get_data()
     db.add_aerodrome(
@@ -370,7 +350,6 @@ async def admin_aero_add_housing(message: types.Message, state: FSMContext):
     await state.set_state(AdminKnowledgeState.aero_add_phone_name)
 
 @router.message(AdminKnowledgeState.aero_add_phone_name)
-@admin_required_message
 async def admin_aero_add_phone_name(message: types.Message, state: FSMContext):
     if message.text.lower() == 'готово':
         await state.clear()
@@ -382,7 +361,6 @@ async def admin_aero_add_phone_name(message: types.Message, state: FSMContext):
     await state.set_state(AdminKnowledgeState.aero_add_phone_number)
 
 @router.message(AdminKnowledgeState.aero_add_phone_number)
-@admin_required_message
 async def admin_aero_add_phone_number(message: types.Message, state: FSMContext):
     data = await state.get_data()
     aerodrome = db.get_aerodrome_by_search(data['aero_name'])
@@ -395,12 +373,9 @@ async def admin_aero_add_phone_number(message: types.Message, state: FSMContext)
         await message.answer("❌ Ошибка! Аэродром не найден.")
         await state.clear()
 
-# ============================================================
-# БЛОКИ БЕЗОПАСНОСТИ (АДМИН)
-# ============================================================
+# ==================== БЛОКИ БЕЗОПАСНОСТИ (АДМИН) ====================
 
 @router.callback_query(lambda c: c.data == "admin_knowledge_safety")
-@admin_required
 async def admin_knowledge_safety(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить блок", callback_data="admin_safety_add")],
@@ -416,7 +391,6 @@ async def admin_knowledge_safety(callback: types.CallbackQuery):
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "admin_safety_add")
-@admin_required
 async def admin_safety_add_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "➕ Добавление блока безопасности\n\n"
@@ -427,7 +401,6 @@ async def admin_safety_add_start(callback: types.CallbackQuery, state: FSMContex
     await callback.answer()
 
 @router.message(AdminKnowledgeState.safety_add_number)
-@admin_required_message
 async def admin_safety_add_number(message: types.Message, state: FSMContext):
     try:
         block_number = int(message.text.strip())
@@ -435,6 +408,7 @@ async def admin_safety_add_number(message: types.Message, state: FSMContext):
         await message.answer("❌ Введите корректный номер (число)")
         return
     
+    # Проверяем что блок с таким номером ещё не существует
     existing = db.get_safety_block_by_number(block_number)
     if existing:
         await message.answer(f"❌ Блок №{block_number} уже существует!\n\nВведите другой номер:")
@@ -445,7 +419,6 @@ async def admin_safety_add_number(message: types.Message, state: FSMContext):
     await state.set_state(AdminKnowledgeState.safety_add_text)
 
 @router.message(AdminKnowledgeState.safety_add_text)
-@admin_required_message
 async def admin_safety_add_text(message: types.Message, state: FSMContext):
     data = await state.get_data()
     db.add_safety_block(
@@ -456,12 +429,9 @@ async def admin_safety_add_text(message: types.Message, state: FSMContext):
     await message.answer(f"✅ Блок безопасности №{data['safety_number']} добавлен!")
     await state.clear()
 
-# ============================================================
-# ЗНАНИЯ ПО САМОЛЕТАМ (АДМИН)
-# ============================================================
+# ==================== ЗНАНИЯ ПО САМОЛЕТАМ (АДМИН) ====================
 
 @router.callback_query(lambda c: c.data == "admin_knowledge_aircraft")
-@admin_required
 async def admin_knowledge_aircraft(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить знание", callback_data="admin_aircraft_add")],
@@ -476,7 +446,6 @@ async def admin_knowledge_aircraft(callback: types.CallbackQuery):
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "admin_aircraft_add")
-@admin_required
 async def admin_aircraft_add_start(callback: types.CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✈️ Ил-76 МД", callback_data="aircraft_type_il76md")],
@@ -493,7 +462,6 @@ async def admin_aircraft_add_start(callback: types.CallbackQuery, state: FSMCont
     await callback.answer()
 
 @router.callback_query(lambda c: c.data.startswith("aircraft_type_"))
-@admin_required
 async def admin_aircraft_type_select(callback: types.CallbackQuery, state: FSMContext):
     aircraft_map = {
         "aircraft_type_il76md": "Ил-76 МД",
@@ -513,14 +481,12 @@ async def admin_aircraft_type_select(callback: types.CallbackQuery, state: FSMCo
     await callback.answer()
 
 @router.message(AdminKnowledgeState.aircraft_add_name)
-@admin_required_message
 async def admin_aircraft_add_name(message: types.Message, state: FSMContext):
     await state.update_data(knowledge_name=message.text.strip())
     await message.answer("Теперь отправьте текст материала (или напишите 'пропустить' если только файл):")
     await state.set_state(AdminKnowledgeState.aircraft_add_text)
 
 @router.message(AdminKnowledgeState.aircraft_add_text)
-@admin_required_message
 async def admin_aircraft_add_text(message: types.Message, state: FSMContext):
     text = message.text.strip()
     if text.lower() == 'пропустить':
@@ -537,13 +503,31 @@ async def admin_aircraft_add_text(message: types.Message, state: FSMContext):
     
     await state.clear()
 
-# ============================================================
-# УПРАВЛЕНИЕ АДМИНАМИ
-# ============================================================
+# ==================== ОСТАЛЬНЫЕ ФУНКЦИИ ====================
+
+@router.callback_query(lambda c: c.data == "admin_fill_airports")
+async def admin_fill_airports(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
+        await callback.answer("❌ У вас нет доступа", show_alert=True)
+        return
+    
+    await callback.message.edit_text("⏳ Заполняю базу аэродромов...")
+    await callback.answer()
+    
+    await callback.message.edit_text("✅ База аэродромов заполнена!\n\n(Функция в разработке)")
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_functions_back")]
+    ])
+    
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
 
 @router.callback_query(lambda c: c.data == "admin_manage")
-@admin_required
 async def admin_manage(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS and not db.check_admin_status(callback.from_user.id, callback.from_user.username):
+        await callback.answer("❌ У вас нет доступа", show_alert=True)
+        return
+    
     text = "👥 Управление администраторами\n\n"
     text += "Выберите действие:\n\n"
     text += "➕ Добавить админа по username\n"
@@ -559,11 +543,9 @@ async def admin_manage(callback: types.CallbackQuery):
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "admin_add_admin")
-@admin_required
 async def admin_add_admin_start(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     
-    # Проверяем что это главный админ из config
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("❌ Только главный админ может добавлять админов", show_alert=True)
         return
@@ -577,14 +559,7 @@ async def admin_add_admin_start(callback: types.CallbackQuery, state: FSMContext
     await callback.answer()
 
 @router.message(AddAdminState.username)
-@admin_required_message
 async def admin_add_admin_by_username(message: types.Message, state: FSMContext):
-    # Проверяем что это главный админ
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ Только главный админ может добавлять админов")
-        await state.clear()
-        return
-    
     username = message.text.strip().lstrip('@')
     
     user = db.find_user_by_username(username)
@@ -602,11 +577,9 @@ async def admin_add_admin_by_username(message: types.Message, state: FSMContext)
     await state.clear()
 
 @router.callback_query(lambda c: c.data == "admin_remove_admin")
-@admin_required
 async def admin_remove_admin_start(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     
-    # Проверяем что это главный админ
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("❌ Только главный админ может удалять админов", show_alert=True)
         return
@@ -632,14 +605,7 @@ async def admin_remove_admin_start(callback: types.CallbackQuery, state: FSMCont
     await callback.answer()
 
 @router.message(RemoveAdminState.user_id)
-@admin_required_message
 async def admin_remove_admin_by_id(message: types.Message, state: FSMContext):
-    # Проверяем что это главный админ
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ Только главный админ может удалять админов")
-        await state.clear()
-        return
-    
     try:
         user_id = int(message.text.strip())
     except ValueError:
@@ -655,25 +621,3 @@ async def admin_remove_admin_by_id(message: types.Message, state: FSMContext):
     
     await message.answer(f"✅ Админ с ID {user_id} удалён!")
     await state.clear()
-
-# ============================================================
-# ЗАПОЛНЕНИЕ БАЗЫ АЭРОДРОМОВ
-# ============================================================
-
-@router.callback_query(lambda c: c.data == "admin_fill_airports")
-@admin_required
-async def admin_fill_airports(callback: types.CallbackQuery):
-    await callback.message.edit_text("⏳ Заполняю базу аэродромов...")
-    await callback.answer()
-    
-    # Здесь можно вызвать скрипт заполнения
-    # from scripts.fill_aerodromes import fill_aerodromes
-    # await fill_aerodromes()
-    
-    await callback.message.edit_text("✅ База аэродромов заполнена!\n\n(Функция в разработке)")
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_functions_back")]
-    ])
-    
-    await callback.message.edit_reply_markup(reply_markup=keyboard)
