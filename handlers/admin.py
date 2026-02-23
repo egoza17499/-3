@@ -24,7 +24,7 @@ class RemoveAdminState(StatesGroup):
 class AdminListState(StatesGroup):
     waiting_for_search = State()
 
-class AdminDeleteUserState(StatesGroup):  # ✅ Новое состояние для удаления
+class AdminDeleteUserState(StatesGroup):
     confirm_delete = State()
 
 class AdminKnowledgeState(StatesGroup):
@@ -315,7 +315,6 @@ async def admin_user_profile(callback: types.CallbackQuery):
                 detail_safe = str(detail).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
                 profile_text += f"• {detail_safe}\n"
         
-        # ✅ Добавлена кнопка удаления пользователя
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад к списку", callback_data="admin_list")],
             [InlineKeyboardButton(text="🗑️ Удалить пользователя", callback_data=f"admin_delete_user_{user_id}")],
@@ -338,9 +337,13 @@ async def admin_user_profile(callback: types.CallbackQuery):
 async def admin_delete_user_confirm(callback: types.CallbackQuery, state: FSMContext):
     """Подтверждение удаления пользователя"""
     try:
-        user_id = int(callback.data.split("_")[-1])
+        parts = callback.data.split("_")
+        if len(parts) < 4:
+            await callback.answer("❌ Ошибка формата", show_alert=True)
+            return
         
-        # Получаем ФИО пользователя
+        user_id = int(parts[-1])
+        
         query = "SELECT fio FROM users WHERE user_id = %s"
         result = db.execute_query(query, (user_id,), fetch=True)
         
@@ -353,7 +356,7 @@ async def admin_delete_user_confirm(callback: types.CallbackQuery, state: FSMCon
         await state.update_data(delete_user_id=user_id, delete_user_fio=fio)
         
         await callback.message.answer(
-            f"⚠️ <b>ВНИМАНИЕ! Удаление пользователя</b>\n\n"
+            f"⚠️ <b>ВНИМАНИЕ!</b>\n\n"
             f"Вы собираетесь БЕЗВОЗВРАТНО удалить:\n"
             f"👤 <b>{fio}</b>\n"
             f"ID: <code>{user_id}</code>\n\n"
@@ -362,13 +365,12 @@ async def admin_delete_user_confirm(callback: types.CallbackQuery, state: FSMCon
             f"• История полётов\n"
             f"• Документы\n"
             f"• Все связанные записи\n\n"
-            f"<b>❗ Это действие НЕЛЬЗЯ отменить!</b>\n\n"
-            f"Нажмите кнопку для подтверждения:",
+            f"<b>❗ Это действие НЕЛЬЗЯ отменить!</b>",
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="❌ ДА, УДАЛИТЬ", callback_data=f"admin_delete_user_confirm_{user_id}")],
-                [InlineKeyboardButton(text="✅ ОТМЕНА", callback_data=f"admin_user_profile_{user_id}")]
-            ]),
-            parse_mode="HTML"
+                [InlineKeyboardButton(text="❌ ДА, УДАЛИТЬ", callback_data=f"adl_yes_{user_id}")],
+                [InlineKeyboardButton(text="✅ ОТМЕНА", callback_data=f"adl_no_{user_id}")]
+            ])
         )
         
         await state.set_state(AdminDeleteUserState.confirm_delete)
@@ -378,32 +380,25 @@ async def admin_delete_user_confirm(callback: types.CallbackQuery, state: FSMCon
         logger.error(f"Ошибка при подготовке удаления: {e}", exc_info=True)
         await callback.answer("❌ Ошибка", show_alert=True)
 
-@router.callback_query(F.data.startswith("admin_delete_user_confirm_"))
+@router.callback_query(F.data.startswith("adl_yes_"))
 @admin_required
 async def admin_delete_user_execute(callback: types.CallbackQuery, state: FSMContext):
     """Выполнение удаления пользователя"""
     try:
         user_id = int(callback.data.split("_")[-1])
         
-        # Получаем данные из состояния
         data = await state.get_data()
         fio = data.get('delete_user_fio', 'Неизвестно')
         
-        # Проверяем что нельзя удалить самого себя
         if user_id == callback.from_user.id:
             await callback.message.answer(
-                "❌ <b>Нельзя удалить самого себя!</b>\n\n"
-                "Выберите другого пользователя.",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_list")]
-                ]),
+                "❌ <b>Нельзя удалить самого себя!</b>",
                 parse_mode="HTML"
             )
             await state.clear()
             await callback.answer()
             return
         
-        # Удаляем пользователя
         success = db.delete_user(user_id)
         
         if success:
@@ -411,21 +406,37 @@ async def admin_delete_user_execute(callback: types.CallbackQuery, state: FSMCon
                 f"✅ <b>Пользователь удалён!</b>\n\n"
                 f"🗑️ {fio} (ID: {user_id})\n"
                 f"полностью удалён из базы данных.",
+                parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔙 К списку пользователей", callback_data="admin_list")]
-                ]),
-                parse_mode="HTML"
+                    [InlineKeyboardButton(text="🔙 К списку", callback_data="admin_list")]
+                ])
             )
             logger.warning(f"⚠️ Админ {callback.from_user.id} удалил пользователя {user_id} ({fio})")
         else:
-            await callback.message.answer("❌ Ошибка при удалении пользователя", parse_mode="HTML")
+            await callback.message.answer("❌ Ошибка при удалении", parse_mode="HTML")
         
         await state.clear()
         await callback.answer()
         
     except Exception as e:
-        logger.error(f"Ошибка при удалении пользователя: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка при удалении", show_alert=True)
+        logger.error(f"Ошибка при удалении: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+@router.callback_query(F.data.startswith("adl_no_"))
+@admin_required
+async def admin_delete_user_cancel(callback: types.CallbackQuery, state: FSMContext):
+    """Отмена удаления пользователя"""
+    try:
+        user_id = int(callback.data.split("_")[-1])
+        await state.clear()
+        
+        await admin_user_profile(callback)
+        await callback.answer("Отменено")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при отмене: {e}")
+        await state.clear()
+        await callback.answer()
 
 # ============================================================
 # СТАТИСТИКА
