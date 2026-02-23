@@ -1,6 +1,9 @@
 # db_manager.py - Глобальный экземпляр базы данных и методы для работы с ней
+import logging
 from database import Database
 from config import DATABASE_URL
+
+logger = logging.getLogger(__name__)
 
 # Создаём и экспортируем глобальный экземпляр БД
 db = Database(DATABASE_URL)
@@ -180,7 +183,7 @@ def find_user_by_username(username: str):
     return result[0] if result else None
 
 def delete_user(user_id: int):
-    """Полностью удалить пользователя из базы данных"""
+    """✅ Полностью удалить пользователя из базы данных"""
     try:
         # Сначала удаляем связанные записи (чтобы не было ошибок FK)
         # Удаляем аэродромы созданные пользователем
