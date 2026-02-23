@@ -75,20 +75,28 @@ async def show_aerodrome_selection(message: types.Message, aerodromes: list, sea
     text = f"🏙️ <b>В городе {city_name} найдено аэродромов: {len(aerodromes)}</b>\n\n"
     text += "Выберите нужный аэродром:\n\n"
     
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    
+    # Формируем кнопки для каждого аэродрома
+    keyboard_buttons = []
     for aero in aerodromes:
         display_name = aero['airport_name'] if aero['airport_name'] else aero['name']
         text += f"• {display_name}\n"
         
-        keyboard.add(InlineKeyboardButton(
-            f"🛫 {display_name}",
+        # Добавляем кнопку в список
+        keyboard_buttons.append([InlineKeyboardButton(
+            text=f"🛫 {display_name}",
             callback_data=f"aerodrome_select_{aero['id']}"
-        ))
+        )])
     
-    keyboard.add(InlineKeyboardButton("🔙 Назад", callback_data="info_aerodrome_btn"))
+    # Добавляем кнопку "Назад"
+    keyboard_buttons.append([InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data="info_aerodrome_btn"
+    )])
     
-    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    # Создаём клавиатуру с правильным синтаксисом для aiogram 3.x
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    
+    await message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
 
 async def show_aerodrome_details(message: types.Message, aerodrome: dict):
     """Показать подробную информацию об аэродроме"""
@@ -115,25 +123,25 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
     # Документы
     documents = get_aerodrome_documents(aerodrome['id'])
     
-    keyboard = []
+    keyboard_buttons = []
     
     if documents:
-        keyboard.append([InlineKeyboardButton(
+        keyboard_buttons.append([InlineKeyboardButton(
             text="📄 Полезные документы",
             callback_data=f"aero_docs_{aerodrome['id']}"
         )])
     
-    keyboard.append([InlineKeyboardButton(
+    keyboard_buttons.append([InlineKeyboardButton(
         text="🔍 Повторный поиск",
         callback_data="info_aerodrome_btn"
     )])
     
-    keyboard.append([InlineKeyboardButton(
+    keyboard_buttons.append([InlineKeyboardButton(
         text="🏠 В главное меню",
         callback_data="info_back"
     )])
     
-    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     
     await message.answer(text, reply_markup=reply_markup)
 
@@ -154,83 +162,4 @@ async def aerodrome_selected(callback: types.CallbackQuery):
         
     except Exception as e:
         logger.error(f"❌ Ошибка при выборе аэродрома: {e}")
-        await callback.answer("❌ Произошла ошибка", show_alert=True)
-
-@router.callback_query(F.data == "info_aerodrome_btn")
-async def info_aerodrome_back(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(
-        "✈️ Поиск информации об аэродроме\n\n"
-        "Пожалуйста, напишите название аэродрома или города,\n"
-        "информация о котором вас интересует"
-    )
-    await state.set_state(KnowledgeState.aerodrome_search)
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("aero_docs_"))
-async def aerodrome_documents_show(callback: types.CallbackQuery):
-    aerodrome_id = int(callback.data.split("_")[-1])
-    documents = get_aerodrome_documents(aerodrome_id)
-    
-    if not documents:
-        await callback.answer("📄 Документы не найдены", show_alert=True)
-        return
-    
-    text = "📄 Полезные документы:\n\n"
-    for doc in documents:
-        doc_type = doc['doc_type'] if doc['doc_type'] else 'Документ'
-        text += f"• {doc['doc_name']} ({doc_type})\n"
-    
-    await callback.message.answer(text)
-    await callback.answer()
-
-# ============================================================
-# БЛОКИ БЕЗОПАСНОСТИ
-# ============================================================
-
-@router.callback_query(F.data == "info_safety")
-async def info_safety(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "🛡️ Блоки по безопасности полетов\n\n"
-        "Выберите номер блока:"
-    )
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("safety_block_"))
-async def safety_block_show(callback: types.CallbackQuery):
-    block_number = int(callback.data.split("_")[-1])
-    block = get_safety_block_by_number(block_number)
-    
-    if not block:
-        await callback.answer("❌ Блок не найден", show_alert=True)
-        return
-    
-    await callback.message.edit_text(
-        f"🛡️ Блок безопасности №{block_number}\n\n"
-        f"{block['block_text']}"
-    )
-    await callback.answer()
-
-# ============================================================
-# ЗНАНИЯ О САМОЛЕТЕ
-# ============================================================
-
-@router.callback_query(F.data == "info_aircraft")
-async def info_aircraft(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "✈️ Полезные сведения о самолете\n\n"
-        "Выберите тему:"
-    )
-    await callback.answer()
-
-# ============================================================
-# НАЗАД
-# ============================================================
-
-@router.callback_query(F.data == "info_back")
-async def info_back(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.edit_text(
-        "📚 Полезная информация\n\n"
-        "Выберите раздел:"
-    )
-    await callback.answer()
+       
