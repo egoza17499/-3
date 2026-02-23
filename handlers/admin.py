@@ -1,113 +1,31 @@
-import logging
-from aiogram import Router, F, types
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import ADMIN_IDS
-from utils.admin_check import admin_required, admin_required_message, is_admin
-from validators import check_flight_ban, check_date_warnings, generate_profile_text
-from db_manager import db
-
-logger = logging.getLogger(__name__)
-router = Router()
-
-# ============================================================
-# СОСТОЯНИЯ
-# ============================================================
-
-class AddAdminState(StatesGroup):
-    username = State()
-
-class RemoveAdminState(StatesGroup):
-    user_id = State()
-
-class AdminListState(StatesGroup):
-    waiting_for_search = State()
-
-# Состояния для базы знаний
-class AdminKnowledgeState(StatesGroup):
-    aero_add_name = State()
-    aero_add_city = State()
-    aero_add_airport = State()
-    aero_add_housing = State()
-    aero_add_phone_name = State()
-    aero_add_phone_number = State()
-    aero_add_doc_name = State()
-    aero_add_doc_file = State()
-    safety_add_number = State()
-    safety_add_text = State()
-    aircraft_add_type = State()
-    aircraft_add_name = State()
-    aircraft_add_text = State()
-    aircraft_add_file = State()
-
-# ============================================================
-# КЛАВИАТУРЫ
-# ============================================================
-
-def get_admin_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 Список пользователей", callback_data="admin_list")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="📚 Управление базой знаний", callback_data="admin_knowledge")],
-        [InlineKeyboardButton(text="✈️ Заполнить базу аэродромов", callback_data="admin_fill_airports")],
-        [InlineKeyboardButton(text="👥 Управление админами", callback_data="admin_manage")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
-    ])
-
-# ============================================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-# ============================================================
-
-def get_user_status_indicator(user):
+def get_user_status_details(user):
     """
-    Возвращает индикатор статуса пользователя
-    🔴 Красный - что-то истекло
-    🟡 Желтый - истекает в течение 30 дней
-    🟢 Зеленый - все хорошо
+    Возвращает детальную информацию о статусе пользователя
+    Returns: (indicator, status_text, details_list)
     """
     try:
         warnings, bans = check_date_warnings(user)
+        
         if bans:
-            return "🔴", "Истекает"
+            # 🔴 Красный кирпич - что-то истекло
+            return "🛑", "Запрещено", bans
         elif warnings:
-            return "🟡", "Внимание"
+            # 🟡 Желтый восклицательный - истекает в течение 30 дней
+            return "⚠️", "Внимание", warnings
         else:
-            return "🟢", "OK"
-    except:
-        return "⚪", "Ошибка"
+            # 🟢 Зеленый круг - всё хорошо
+            return "🟢", "OK", []
+    except Exception as e:
+        logger.error(f"Ошибка проверки статуса: {e}")
+        return "⚪", "Ошибка", []
 
-def create_user_keyboard(user_id, fio):
-    """Создаёт клавиатуру с кнопкой ФИО"""
-    fio_safe = fio[:50]  # Ограничиваем длину
+def create_user_list_keyboard(user_id, fio):
+    """Создаёт клавиатуру с кнопкой для перехода к профилю"""
+    fio_short = fio[:40] + "..." if len(fio) > 40 else fio
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"👤 {fio_safe}", callback_data=f"admin_user_profile_{user_id}")],
+        [InlineKeyboardButton(text=f"👤 {fio_short}", callback_data=f"admin_user_profile_{user_id}")],
         [InlineKeyboardButton(text="🔙 Назад к списку", callback_data="admin_list")]
     ])
-
-# ============================================================
-# АДМИН МЕНЮ
-# ============================================================
-
-@router.callback_query(F.data == "admin_back")
-@admin_required
-async def admin_back(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    from handlers.menu import get_main_keyboard
-    await callback.message.edit_text("Главное меню", reply_markup=get_main_keyboard(True))
-    await callback.answer()
-
-@router.callback_query(F.data == "admin_functions_back")
-@admin_required
-async def admin_functions_back(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    text = "🛡 Административные функции\n\nВыберите действие:"
-    await callback.message.edit_text(text, reply_markup=get_admin_keyboard())
-    await callback.answer()
-
-# ============================================================
-# СПИСОК ПОЛЬЗОВАТЕЛЕЙ
-# ============================================================
 
 @router.callback_query(F.data == "admin_list")
 @admin_required
@@ -127,10 +45,10 @@ async def admin_list(callback: types.CallbackQuery, state: FSMContext):
         text = "📋 <b>Список пользователей</b>\n\n"
         text += "💡 <i>Введите фамилию для поиска или нажмите на имя</i>\n\n"
         
-        # Считаем статистику по статусам
-        red_count = 0
-        yellow_count = 0
+        # Считаем статистику
         green_count = 0
+        yellow_count = 0
+        red_count = 0
         
         for i, user in enumerate(users, 1):
             user_id = user[0] if len(user) > 0 else 0
@@ -138,39 +56,47 @@ async def admin_list(callback: types.CallbackQuery, state: FSMContext):
             fio = user[3] if len(user) > 3 else "Не указано"
             rank = user[4] if len(user) > 4 else "Не указано"
             
-            # Экранируем HTML символы
+            # Экранируем HTML
             fio_safe = str(fio).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
             username_safe = str(username).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
             rank_safe = str(rank).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;') if rank else "Не указано"
             
-            # Получаем индикатор статуса
-            indicator, status_text = get_user_status_indicator(user)
+            # Получаем статус
+            indicator, status_label, details = get_user_status_details(user)
             
             # Считаем статистику
-            if indicator == "🔴":
-                red_count += 1
-            elif indicator == "🟡":
-                yellow_count += 1
-            else:
+            if indicator == "🟢":
                 green_count += 1
+            elif indicator == "⚠️":
+                yellow_count += 1
+            elif indicator == "🛑":
+                red_count += 1
             
-            # Добавляем кнопку с ФИО
-            text += f"{i}. {indicator} <b><a href='tg://user?id={user_id}'>{fio_safe}</a></b>\n"
-            text += f"   👤 @{username_safe} | 🎖 {rank_safe} | {status_text}\n\n"
+            # Формируем строку пользователя
+            text += f"{i}. {indicator} <b>{fio_safe}</b>\n"
+            text += f"   👤 @{username_safe} | 🎖 {rank_safe}\n"
+            
+            # Добавляем детали статуса
+            if details:
+                for detail in details:
+                    detail_safe = str(detail).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+                    text += f"   <i>{detail_safe}</i>\n"
+            
+            text += "\n"
             
             if len(text) > 3500:
-                text += f"\n... и ещё {len(users) - i} пользователей\n"
+                text += f"... и ещё {len(users) - i} пользователей\n"
                 break
         
         # Добавляем статистику
-        text += f"\n<b>Статус:</b> 🟢 {green_count} | 🟡 {yellow_count} | 🔴 {red_count}\n"
+        text += f"\n<b>Статус:</b> 🟢 {green_count} | ⚠️ {yellow_count} | 🛑 {red_count}\n"
         text += "\n<i>Введите текст для поиска или нажмите Назад</i>"
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_functions_back")]
         ])
         
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True)
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         await state.set_state(AdminListState.waiting_for_search)
         await callback.answer()
         
@@ -200,23 +126,23 @@ async def admin_list_search_handler(message: types.Message):
             fio = user[3] if len(user) > 3 else "Не указано"
             
             profile_text = generate_profile_text(user)
-            warnings, bans = check_date_warnings(user)
+            indicator, status_label, details = get_user_status_details(user)
             
-            # Добавляем индикаторы
-            indicator, status_text = get_user_status_indicator(user)
-            profile_text = f"{indicator} <b>Статус: {status_text}</b>\n\n" + profile_text
+            # Добавляем индикатор в начало
+            profile_text = f"{indicator} <b>Статус: {status_label}</b>\n\n" + profile_text
             
-            if warnings:
-                profile_text += "\n🟡 <b>СКОРО ИСТЕКАЕТ (30 дней):</b>\n" + "\n".join([f"• {w}" for w in warnings])
-            if bans:
-                profile_text += "\n\n🔴 <b>ЗАПРЕЩЕНО:</b>\n" + "\n".join([f"• {b}" for b in bans])
+            # Добавляем детали
+            if details:
+                profile_text += f"\n<b>Детали:</b>\n"
+                for detail in details:
+                    detail_safe = str(detail).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+                    profile_text += f"• {detail_safe}\n"
             
-            keyboard = create_user_keyboard(user_id, fio)
-            await message.answer(profile_text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True)
+            keyboard = create_user_list_keyboard(user_id, fio)
+            await message.answer(profile_text, reply_markup=keyboard, parse_mode="HTML")
         else:
             # Показываем список с кнопками
             text = f"🔍 Найдено: {len(users)}\n\n"
-            
             keyboard_buttons = []
             
             for i, user in enumerate(users, 1):
@@ -229,32 +155,37 @@ async def admin_list_search_handler(message: types.Message):
                 username_safe = str(username).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
                 rank_safe = str(rank).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;') if rank else "Не указано"
                 
-                indicator, status_text = get_user_status_indicator(user)
+                indicator, status_label, details = get_user_status_details(user)
                 
                 text += f"{i}. {indicator} <b>{fio_safe}</b>\n"
-                text += f"   👤 @{username_safe} | 🎖 {rank_safe} | {status_text}\n\n"
+                text += f"   👤 @{username_safe} | 🎖 {rank_safe}\n"
                 
-                # Добавляем кнопку для каждого пользователя
+                if details:
+                    for detail in details:
+                        detail_safe = str(detail).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+                        text += f"   <i>{detail_safe}</i>\n"
+                
+                text += "\n"
+                
+                # Кнопка для каждого пользователя
+                fio_short = fio[:35] + "..." if len(fio) > 35 else fio
                 keyboard_buttons.append([
-                    InlineKeyboardButton(text=f"👤 {fio_safe[:40]}", callback_data=f"admin_user_profile_{user_id}")
+                    InlineKeyboardButton(text=f"👤 {fio_short}", callback_data=f"admin_user_profile_{user_id}")
                 ])
             
             keyboard_buttons.append([InlineKeyboardButton(text="🔙 Назад к списку", callback_data="admin_list")])
             keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
             
-            await message.answer(text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True)
+            await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
             
     except Exception as e:
         logger.error(f"Ошибка поиска: {e}", exc_info=True)
         await message.answer("❌ Ошибка при поиске", parse_mode="HTML")
 
-# ============================================================
-# ПРОСМОТР ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ
-# ============================================================
-
 @router.callback_query(F.data.startswith("admin_user_profile_"))
 @admin_required
 async def admin_user_profile(callback: types.CallbackQuery):
+    """Показывает полный профиль пользователя внутри бота"""
     try:
         user_id = int(callback.data.split("_")[-1])
         
@@ -276,254 +207,29 @@ async def admin_user_profile(callback: types.CallbackQuery):
         user = user[0]
         fio = user[3] if len(user) > 3 else "Не указано"
         
+        # Генерируем текст профиля
         profile_text = generate_profile_text(user)
-        warnings, bans = check_date_warnings(user)
+        indicator, status_label, details = get_user_status_details(user)
         
-        # Добавляем индикаторы
-        indicator, status_text = get_user_status_indicator(user)
-        profile_text = f"{indicator} <b>Статус: {status_text}</b>\n\n" + profile_text
+        # Добавляем индикатор
+        profile_text = f"{indicator} <b>Статус: {status_label}</b>\n\n" + profile_text
         
-        if warnings:
-            profile_text += "\n🟡 <b>СКОРО ИСТЕКАЕТ (30 дней):</b>\n" + "\n".join([f"• {w}" for w in warnings])
-        if bans:
-            profile_text += "\n\n🔴 <b>ЗАПРЕЩЕНО:</b>\n" + "\n".join([f"• {b}" for b in bans])
+        # Добавляем детали
+        if details:
+            profile_text += f"\n<b>⚠️ Детали статуса:</b>\n"
+            for detail in details:
+                detail_safe = str(detail).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+                profile_text += f"• {detail_safe}\n"
         
+        # Кнопки
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад к списку", callback_data="admin_list")],
             [InlineKeyboardButton(text="🔙 Админ функции", callback_data="admin_functions_back")]
         ])
         
-        await callback.message.answer(profile_text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True)
+        await callback.message.answer(profile_text, reply_markup=keyboard, parse_mode="HTML")
         await callback.answer()
         
     except Exception as e:
         logger.error(f"Ошибка просмотра профиля: {e}", exc_info=True)
         await callback.answer("❌ Ошибка", show_alert=True)
-
-# ============================================================
-# СТАТИСТИКА
-# ============================================================
-
-@router.callback_query(F.data == "admin_stats")
-@admin_required
-async def admin_stats(callback: types.CallbackQuery):
-    try:
-        users = db.get_all_users()
-        total = len(users) if users else 0
-        
-        red_count = 0
-        yellow_count = 0
-        green_count = 0
-        
-        for user in users:
-            indicator, _ = get_user_status_indicator(user)
-            if indicator == "🔴":
-                red_count += 1
-            elif indicator == "🟡":
-                yellow_count += 1
-            else:
-                green_count += 1
-        
-        text = f"📊 <b>Статистика:</b>\n\n"
-        text += f"👥 Всего: {total}\n"
-        text += f"🟢 Всё OK: {green_count}\n"
-        text += f"🟡 Внимание: {yellow_count}\n"
-        text += f"🔴 Запрещено: {red_count}\n\n"
-        text += "Нажмите чтобы увидеть список:"
-        
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"🟢 Всё OK ({green_count})", callback_data="admin_stats_green")],
-            [InlineKeyboardButton(text=f"🟡 Внимание ({yellow_count})", callback_data="admin_stats_yellow")],
-            [InlineKeyboardButton(text=f"🔴 Запрещено ({red_count})", callback_data="admin_stats_red")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_functions_back")]
-        ])
-        
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"Ошибка в admin_stats: {e}", exc_info=True)
-        await callback.answer("❌ Ошибка", show_alert=True)
-
-@router.callback_query(F.data == "admin_stats_green")
-@admin_required
-async def admin_stats_green(callback: types.CallbackQuery):
-    users = db.get_all_users()
-    green_users = [u for u in users if get_user_status_indicator(u)[0] == "🟢"]
-    
-    if not green_users:
-        await callback.answer("Нет пользователей со статусом OK", show_alert=True)
-        return
-    
-    text = "🟢 <b>Всё OK:</b>\n\n"
-    for i, user in enumerate(green_users[:20], 1):
-        fio = user[3] if len(user) > 3 else "Не указано"
-        rank = user[4] if len(user) > 4 else "Не указано"
-        fio_safe = str(fio).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
-        rank_safe = str(rank).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;') if rank else "Не указано"
-        text += f"{i}. {fio_safe} - {rank_safe}\n"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_stats")]
-    ])
-    
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    await callback.answer()
-
-@router.callback_query(F.data == "admin_stats_yellow")
-@admin_required
-async def admin_stats_yellow(callback: types.CallbackQuery):
-    users = db.get_all_users()
-    yellow_users = [u for u in users if get_user_status_indicator(u)[0] == "🟡"]
-    
-    if not yellow_users:
-        await callback.answer("Нет пользователей со статусом Внимание", show_alert=True)
-        return
-    
-    text = "🟡 <b>Внимание (истекает в 30 дней):</b>\n\n"
-    for i, user in enumerate(yellow_users[:20], 1):
-        fio = user[3] if len(user) > 3 else "Не указано"
-        rank = user[4] if len(user) > 4 else "Не указано"
-        fio_safe = str(fio).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
-        rank_safe = str(rank).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;') if rank else "Не указано"
-        text += f"{i}. {fio_safe} - {rank_safe}\n"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_stats")]
-    ])
-    
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    await callback.answer()
-
-@router.callback_query(F.data == "admin_stats_red")
-@admin_required
-async def admin_stats_red(callback: types.CallbackQuery):
-    users = db.get_all_users()
-    red_users = [u for u in users if get_user_status_indicator(u)[0] == "🔴"]
-    
-    if not red_users:
-        await callback.answer("Нет пользователей со статусом Запрещено", show_alert=True)
-        return
-    
-    text = "🔴 <b>Запрещено:</b>\n\n"
-    for i, user in enumerate(red_users[:20], 1):
-        fio = user[3] if len(user) > 3 else "Не указано"
-        rank = user[4] if len(user) > 4 else "Не указано"
-        fio_safe = str(fio).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
-        rank_safe = str(rank).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;') if rank else "Не указано"
-        bans = check_flight_ban(user)
-        text += f"{i}. {fio_safe} - {rank_safe}\n"
-        for ban in bans:
-            ban_safe = str(ban).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
-            text += f"   • {ban_safe}\n"
-        text += "\n"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_stats")]
-    ])
-    
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    await callback.answer()
-
-# ============================================================
-# УПРАВЛЕНИЕ АДМИНАМИ
-# ============================================================
-
-@router.callback_query(F.data == "admin_manage")
-@admin_required
-async def admin_manage(callback: types.CallbackQuery):
-    text = "👥 <b>Управление администраторами</b>\n\nВыберите действие:\n\n➕ Добавить админа\n➖ Удалить админа"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Добавить админа", callback_data="admin_add_admin")],
-        [InlineKeyboardButton(text="➖ Удалить админа", callback_data="admin_remove_admin")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_functions_back")]
-    ])
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    await callback.answer()
-
-@router.callback_query(F.data == "admin_add_admin")
-@admin_required
-async def admin_add_admin_start(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("❌ Только главный админ может добавлять", show_alert=True)
-        return
-    await callback.message.edit_text(
-        "➕ <b>Добавление админа</b>\n\nВведите username (без @ или с @):\n\nПример: username или @username",
-        parse_mode="HTML"
-    )
-    await state.set_state(AddAdminState.username)
-    await callback.answer()
-
-@router.message(AddAdminState.username, F.text)
-@admin_required_message
-async def admin_add_admin_by_username(message: types.Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ Только главный админ", parse_mode="HTML")
-        await state.clear()
-        return
-    username = message.text.strip().lstrip('@')
-    user = db.find_user_by_username(username)
-    if not user:
-        await message.answer(f"❌ Пользователь @{username} не найден!", parse_mode="HTML")
-        await state.clear()
-        return
-    db.add_admin(user['user_id'], username, message.from_user.id)
-    await message.answer(f"✅ @{username} добавлен в админы!", parse_mode="HTML")
-    await state.clear()
-
-@router.callback_query(F.data == "admin_remove_admin")
-@admin_required
-async def admin_remove_admin_start(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("❌ Только главный админ может удалять", show_alert=True)
-        return
-    admins = db.get_all_admins()
-    if not admins:
-        await callback.message.edit_text("📋 <b>Нет админов в БД</b> (кроме config)", parse_mode="HTML")
-        await callback.answer()
-        return
-    text = "➖ <b>Удаление админа</b>\n\nТекущие админы:\n\n"
-    for admin in admins:
-        username = admin.get('username') or "не указан"
-        user_id = admin.get('user_id')
-        text += f"• ID: <code>{user_id}</code> (@{username})\n"
-    text += "\n<i>Введите ID для удаления:</i>"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_manage")]
-    ])
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    await state.set_state(RemoveAdminState.user_id)
-    await callback.answer()
-
-@router.message(RemoveAdminState.user_id, F.text)
-@admin_required_message
-async def admin_remove_admin_by_id(message: types.Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ Только главный админ", parse_mode="HTML")
-        await state.clear()
-        return
-    try:
-        user_id = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ Введите число (ID)", parse_mode="HTML")
-        return
-    if user_id in ADMIN_IDS:
-        await message.answer("❌ Нельзя удалить главного админа из config!", parse_mode="HTML")
-        await state.clear()
-        return
-    admins = db.get_all_admins()
-    admin_exists = any(admin.get('user_id') == user_id for admin in admins)
-    if not admin_exists:
-        await message.answer(f"❌ Админ с ID {user_id} не найден!", parse_mode="HTML")
-        await state.clear()
-        return
-    try:
-        db.remove_admin(user_id)
-        await message.answer(f"✅ Админ с ID {user_id} удалён!", parse_mode="HTML")
-    except Exception as e:
-        logger.error(f"Ошибка удаления: {e}")
-        await message.answer(f"❌ Ошибка: {str(e)}", parse_mode="HTML")
-    finally:
-        await state.clear()
