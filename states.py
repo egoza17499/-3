@@ -1,11 +1,32 @@
 from aiogram.fsm.state import State, StatesGroup
 
+# ============================================================
+# СОСТОЯНИЯ ДЛЯ ПОЛЕЗНОЙ ИНФОРМАЦИИ
+# ============================================================
+
 class KnowledgeState(StatesGroup):
-    aerodrome_search = State()
-    safety_block_search = State()
-    aircraft_search = State()
+    """Состояния для раздела 'Полезная информация'"""
+    aerodrome_search = State()        # Поиск аэродрома
+    safety_block_search = State()     # Поиск блока безопасности
+    aircraft_search = State()         # Поиск знаний о самолете
+
+# ============================================================
+# СОСТОЯНИЯ ДЛЯ РЕГИСТРАЦИИ
+# ============================================================
 
 class RegistrationState(StatesGroup):
-    fio = State()
-    rank = State()
-    qualification = State()
+    """Состояния для регистрации пользователя"""
+    fio = State()              # ФИО
+    rank = State()             # Звание
+    qualification = State()    # Квалификация
+
+# ============================================================
+# СОСТОЯНИЯ ДЛЯ РЕДАКТИРОВАНИЯ АЭРОДРОМА
+# ============================================================
+
+class EditAerodromeState(StatesGroup):
+    """Состояния для редактирования аэродрома (доступно всем)"""
+    add_phone_name = State()        # Ввод названия телефона (АДП, Диспетчер и т.д.)
+    add_phone_number = State()      # Ввод номера телефона
+    change_phone_number = State()   # Изменение существующего номера
+    change_housing = State()        # Изменение информации о жилье
