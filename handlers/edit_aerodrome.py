@@ -27,23 +27,15 @@ async def edit_aerodrome_menu(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("❌ Ошибка: неверный ID аэродрома", show_alert=True)
         return
     
-    # Получаем информацию об аэродроме
     aerodrome = get_aerodrome_by_id(aerodrome_id)
     
     if not aerodrome:
         await callback.answer("❌ Аэродром не найден", show_alert=True)
         return
     
-    # Сохраняем ID в состоянии
     await state.update_data(aerodrome_id=aerodrome_id)
-    
-    # Получаем телефоны
     phones = get_aerodrome_phones(aerodrome_id)
     
-    # ОТЛАДКА: логируем что получили
-    logger.info(f"📱 Телефоны для аэродрома {aerodrome_id}: {phones}")
-    
-    # Формируем текст
     text = f"✏️ <b>Редактирование: {aerodrome['name']}</b>\n\n"
     
     if aerodrome['city']:
@@ -63,7 +55,6 @@ async def edit_aerodrome_menu(callback: types.CallbackQuery, state: FSMContext):
     
     text += "\n<b>Выберите действие:</b>"
     
-    # Создаем меню
     keyboard = [
         [InlineKeyboardButton(text="📱 Добавить телефон", callback_data="edit_add_phone")],
         [InlineKeyboardButton(text="✏️ Изменить телефон", callback_data="edit_change_phone")],
@@ -82,7 +73,6 @@ async def edit_aerodrome_menu(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "edit_add_phone")
 async def edit_add_phone(callback: types.CallbackQuery, state: FSMContext):
-    """Начать добавление телефона"""
     await callback.message.edit_text(
         "📱 <b>Добавление телефона</b>\n\n"
         "Введите название телефона (например: АДП, Диспетчер, УС и т.д.):",
@@ -93,7 +83,6 @@ async def edit_add_phone(callback: types.CallbackQuery, state: FSMContext):
 
 @router.message(EditAerodromeState.add_phone_name)
 async def edit_add_phone_name(message: types.Message, state: FSMContext):
-    """Сохраняем название телефона и запрашиваем номер"""
     phone_name = message.text.strip()
     await state.update_data(phone_name=phone_name)
     
@@ -106,7 +95,6 @@ async def edit_add_phone_name(message: types.Message, state: FSMContext):
 
 @router.message(EditAerodromeState.add_phone_number)
 async def edit_add_phone_number(message: types.Message, state: FSMContext):
-    """Добавляем телефон в базу"""
     phone_number = message.text.strip()
     data = await state.get_data()
     aerodrome_id = data.get('aerodrome_id')
@@ -117,7 +105,6 @@ async def edit_add_phone_number(message: types.Message, state: FSMContext):
         await state.clear()
         return
     
-    # Добавляем телефон
     try:
         add_aerodrome_phone(aerodrome_id, phone_name, phone_number)
         
@@ -143,7 +130,6 @@ async def edit_add_phone_number(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data == "edit_change_phone")
 async def edit_change_phone(callback: types.CallbackQuery, state: FSMContext):
-    """Показать список телефонов для изменения"""
     data = await state.get_data()
     aerodrome_id = data.get('aerodrome_id')
     
@@ -157,35 +143,19 @@ async def edit_change_phone(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("❌ Нет телефонов для изменения", show_alert=True)
         return
     
-    # ОТЛАДКА: проверяем структуру данных
-    logger.info(f"📱 Получены телефоны: {phones}")
-    if phones:
-        logger.info(f"📱 Тип первого телефона: {type(phones[0])}")
-        logger.info(f"📱 Ключи первого телефона: {phones[0].keys() if hasattr(phones[0], 'keys') else 'N/A'}")
-    
     text = "✏️ <b>Выберите телефон для изменения:</b>\n\n"
     
     keyboard = []
     for phone in phones:
-        # ПРОВЕРКА: получаем ID разными способами
-        phone_id = None
-        
-        if isinstance(phone, dict):
-            # Пробуем разные варианты ключей
-            phone_id = phone.get('id') or phone.get('phone_id')
+        phone_id = phone.get('id')
         
         if phone_id is None:
-            logger.error(f"❌ Не удалось получить ID телефона: {phone}")
+            logger.error(f"❌ У телефона нет ID: {phone}")
             continue
         
-        logger.info(f"✅ Добавляем телефон с ID: {phone_id}")
-        
-        phone_name = phone.get('phone_name', 'N/A')
-        phone_number = phone.get('phone_number', 'N/A')
-        
         keyboard.append([InlineKeyboardButton(
-            text=f"📱 {phone_name}: {phone_number}",
-            callback_data=f"edit_phone_{phone_id}"
+            text=f"📱 {phone.get('phone_name', 'N/A')}: {phone.get('phone_number', 'N/A')}",
+            callback_data=f"edit_phone_select_{phone_id}"
         )])
     
     keyboard.append([InlineKeyboardButton(
@@ -194,7 +164,7 @@ async def edit_change_phone(callback: types.CallbackQuery, state: FSMContext):
     )])
     
     if not keyboard:
-        await callback.answer("❌ Нет доступных телефонов для изменения", show_alert=True)
+        await callback.answer("❌ Нет доступных телефонов", show_alert=True)
         return
     
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -202,17 +172,18 @@ async def edit_change_phone(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
     await callback.answer()
 
-@router.callback_query(F.data.startswith("edit_phone_"))
+@router.callback_query(F.data.startswith("edit_phone_select_"))
 async def edit_phone_select(callback: types.CallbackQuery, state: FSMContext):
-    """Выбор действия для телефона"""
+    """Выбор телефона - СОХРАНЯЕМ phone_id В СОСТОЯНИИ"""
     try:
         phone_id = int(callback.data.split("_")[-1])
-        logger.info(f"✅ Получен phone_id из callback: {phone_id}")
+        logger.info(f"✅ Выбран телефон с ID: {phone_id}")
     except (ValueError, IndexError) as e:
         logger.error(f"❌ Ошибка парсинга phone_id: {callback.data}, ошибка: {e}")
         await callback.answer("❌ Ошибка: неверный ID телефона", show_alert=True)
         return
     
+    # ВАЖНО: Сохраняем phone_id в состоянии!
     await state.update_data(phone_id=phone_id)
     
     text = "✏️ <b>Что сделать с телефоном?</b>\n\n"
@@ -231,7 +202,18 @@ async def edit_phone_select(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "edit_phone_change_number")
 async def edit_phone_change_number(callback: types.CallbackQuery, state: FSMContext):
-    """Изменить номер телефона"""
+    """Изменить номер - БЕРЕМ phone_id ИЗ СОСТОЯНИЯ"""
+    # Проверяем, что phone_id есть в состоянии
+    data = await state.get_data()
+    phone_id = data.get('phone_id')
+    
+    if not phone_id:
+        logger.error("❌ phone_id не найден в состоянии!")
+        await callback.answer("❌ Ошибка: телефон не выбран. Начните сначала.", show_alert=True)
+        return
+    
+    logger.info(f"🔄 Изменение телефона ID: {phone_id}")
+    
     await callback.message.edit_text(
         "📱 <b>Введите новый номер телефона:</b>\n\n"
         "Пример: 8-999-123-45-67",
@@ -248,7 +230,7 @@ async def edit_phone_change_number_process(message: types.Message, state: FSMCon
     phone_id = data.get('phone_id')
     aerodrome_id = data.get('aerodrome_id')
     
-    logger.info(f"🔄 Обновление телефона: phone_id={phone_id}, новый номер={new_number}")
+    logger.info(f"🔄 Обновление: phone_id={phone_id}, новый номер={new_number}")
     
     if not phone_id or not aerodrome_id:
         await message.answer("❌ Ошибка: потеряны данные. Начните сначала.")
@@ -256,7 +238,6 @@ async def edit_phone_change_number_process(message: types.Message, state: FSMCon
         return
     
     try:
-        # Обновляем номер
         db.execute_query(
             "UPDATE aerodrome_phones SET phone_number = %s WHERE id = %s",
             (new_number, phone_id)
@@ -280,12 +261,12 @@ async def edit_phone_change_number_process(message: types.Message, state: FSMCon
 
 @router.callback_query(F.data == "edit_phone_delete")
 async def edit_phone_delete(callback: types.CallbackQuery, state: FSMContext):
-    """Удалить телефон"""
+    """Удалить телефон - БЕРЕМ phone_id ИЗ СОСТОЯНИЯ"""
     data = await state.get_data()
     phone_id = data.get('phone_id')
     aerodrome_id = data.get('aerodrome_id')
     
-    logger.info(f"🗑️ Удаление телефона: phone_id={phone_id}")
+    logger.info(f"🗑️ Удаление телефона ID: {phone_id}")
     
     if not phone_id or not aerodrome_id:
         await callback.answer("❌ Ошибка: потеряны данные", show_alert=True)
@@ -293,7 +274,6 @@ async def edit_phone_delete(callback: types.CallbackQuery, state: FSMContext):
         return
     
     try:
-        # Удаляем телефон
         delete_aerodrome_phone(phone_id)
         
         await callback.message.edit_text(
@@ -317,7 +297,6 @@ async def edit_phone_delete(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "edit_change_housing")
 async def edit_change_housing(callback: types.CallbackQuery, state: FSMContext):
-    """Начать изменение информации о жилье"""
     data = await state.get_data()
     aerodrome_id = data.get('aerodrome_id')
     
@@ -342,7 +321,6 @@ async def edit_change_housing(callback: types.CallbackQuery, state: FSMContext):
 
 @router.message(EditAerodromeState.change_housing)
 async def edit_change_housing_process(message: types.Message, state: FSMContext):
-    """Сохраняем новую информацию о жилье"""
     housing_info = message.text.strip()
     data = await state.get_data()
     aerodrome_id = data.get('aerodrome_id')
@@ -353,7 +331,6 @@ async def edit_change_housing_process(message: types.Message, state: FSMContext)
         return
     
     try:
-        # Обновляем информацию
         db.update_aerodrome(aerodrome_id, housing_info=housing_info)
         
         await message.answer(
@@ -378,24 +355,20 @@ async def edit_change_housing_process(message: types.Message, state: FSMContext)
 
 @router.callback_query(F.data.startswith("edit_back_"))
 async def edit_back_to_aerodrome(callback: types.CallbackQuery, state: FSMContext):
-    """Вернуться к просмотру аэродрома"""
     try:
         aerodrome_id = int(callback.data.split("_")[-1])
     except (ValueError, IndexError):
         await callback.answer("❌ Ошибка: неверный ID аэродрома", show_alert=True)
         return
     
-    # Очищаем состояние
     await state.clear()
     
-    # Получаем информацию об аэродроме
     aerodrome = get_aerodrome_by_id(aerodrome_id)
     
     if not aerodrome:
         await callback.answer("❌ Аэродром не найден", show_alert=True)
         return
     
-    # Формируем текст (дублируем логику из knowledge.py)
     city = aerodrome['city'] or aerodrome['name']
     airport = aerodrome['airport_name'] or ""
     housing = aerodrome['housing_info'] or "Информация уточняется"
@@ -405,7 +378,6 @@ async def edit_back_to_aerodrome(callback: types.CallbackQuery, state: FSMContex
         text += f"\n✈️ Аэродром: {airport}"
     text += f"\n🏠 Жилье: {housing}\n\n"
     
-    # Телефоны
     phones = get_aerodrome_phones(aerodrome_id)
     if phones:
         text += "📞 Полезные номера телефонов:\n"
@@ -413,7 +385,6 @@ async def edit_back_to_aerodrome(callback: types.CallbackQuery, state: FSMContex
             text += f"• {phone.get('phone_name', 'N/A')}: {phone.get('phone_number', 'N/A')}\n"
         text += "\n"
     
-    # Кнопки
     keyboard_buttons = [
         [InlineKeyboardButton(text="🔍 Повторный поиск", callback_data="info_aerodrome_btn")],
         [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_aerodrome_{aerodrome_id}")]
@@ -421,6 +392,5 @@ async def edit_back_to_aerodrome(callback: types.CallbackQuery, state: FSMContex
     
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     
-    # Используем edit_text вместо удаления сообщения
     await callback.message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
     await callback.answer()
