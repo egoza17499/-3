@@ -57,7 +57,7 @@ async def reg_fio(message: types.Message, state: FSMContext):
 async def reg_rank(message: types.Message, state: FSMContext):
     await state.update_data(rank=message.text)
     await state.set_state(RegistrationState.qualification)
-    await message.answer("3️⃣ Введите квалификацию:")
+    await message.answer("3️⃣ Введите летный класс:")
 
 @router.message(RegistrationState.qualification)
 async def reg_qual(message: types.Message, state: FSMContext):
