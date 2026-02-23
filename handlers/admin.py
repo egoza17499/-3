@@ -9,7 +9,7 @@ from validators import check_flight_ban, check_date_warnings, generate_profile_t
 from db_manager import db
 
 logger = logging.getLogger(__name__)
-router = Router()  # ✅ Создаём router!
+router = Router()
 
 # ============================================================
 # СОСТОЯНИЯ
@@ -23,6 +23,9 @@ class RemoveAdminState(StatesGroup):
 
 class AdminListState(StatesGroup):
     waiting_for_search = State()
+
+class AdminDeleteUserState(StatesGroup):  # ✅ Новое состояние для удаления
+    confirm_delete = State()
 
 class AdminKnowledgeState(StatesGroup):
     aero_add_name = State()
@@ -194,7 +197,6 @@ async def admin_list_search_handler(message: types.Message):
             return
         
         if len(users) == 1:
-            # Показываем профиль с кнопками
             user = users[0]
             user_id = user[0]
             fio = user[3] if len(user) > 3 else "Не указано"
@@ -213,7 +215,6 @@ async def admin_list_search_handler(message: types.Message):
             keyboard = create_user_list_keyboard(user_id, fio)
             await message.answer(profile_text, reply_markup=keyboard, parse_mode="HTML")
         else:
-            # Показываем список с КНОПКАМИ-ФИО
             text = f"🔍 Найдено: {len(users)}\n\n"
             keyboard_buttons = []
             
@@ -229,7 +230,6 @@ async def admin_list_search_handler(message: types.Message):
                 
                 indicator, status_label, details = get_user_status_details(user)
                 
-                # ФИО как АКТИВНАЯ КНОПКА
                 fio_short = fio[:40] + "..." if len(fio) > 40 else fio
                 keyboard_buttons.append([
                     InlineKeyboardButton(
@@ -238,7 +238,6 @@ async def admin_list_search_handler(message: types.Message):
                     )
                 ])
                 
-                # Дополнительная информация под кнопкой (не кликабельна)
                 text += f"   👤 @{username_safe} | 🎖 {rank_safe}\n"
                 
                 if details:
@@ -248,7 +247,6 @@ async def admin_list_search_handler(message: types.Message):
                 
                 text += "\n"
             
-            # Кнопка "Назад"
             keyboard_buttons.append([InlineKeyboardButton(text="🔙 Назад к списку", callback_data="admin_list")])
             keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
             
@@ -258,13 +256,16 @@ async def admin_list_search_handler(message: types.Message):
         logger.error(f"Ошибка поиска: {e}", exc_info=True)
         await message.answer("❌ Ошибка при поиске", parse_mode="HTML")
 
+# ============================================================
+# ПРОСМОТР ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ
+# ============================================================
+
 @router.callback_query(F.data.startswith("admin_user_profile_"))
 @admin_required
 async def admin_user_profile(callback: types.CallbackQuery):
     try:
         user_id = int(callback.data.split("_")[-1])
         
-        # Получаем пользователя из БД
         query = """
             SELECT user_id, username, registered_at, fio, rank, qualification,
                    leave_start_date, leave_end_date, vlk_date, umo_date,
@@ -279,12 +280,9 @@ async def admin_user_profile(callback: types.CallbackQuery):
             await callback.answer("❌ Пользователь не найден", show_alert=True)
             return
         
-        # Преобразуем в кортеж как в других функциях
         user = result[0]
         
-        # Проверяем что это кортеж/список
         if isinstance(user, dict):
-            # Если словарь, преобразуем в кортеж
             user = (
                 user.get('user_id', 0),
                 user.get('username', ''),
@@ -306,23 +304,21 @@ async def admin_user_profile(callback: types.CallbackQuery):
         
         fio = user[3] if len(user) > 3 else "Не указано"
         
-        # Генерируем текст профиля
         profile_text = generate_profile_text(user)
         indicator, status_label, details = get_user_status_details(user)
         
-        # Добавляем индикатор
         profile_text = f"{indicator} <b>Статус: {status_label}</b>\n\n" + profile_text
         
-        # Добавляем детали
         if details:
             profile_text += f"\n<b>⚠️ Детали статуса:</b>\n"
             for detail in details:
                 detail_safe = str(detail).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
                 profile_text += f"• {detail_safe}\n"
         
-        # Кнопки
+        # ✅ Добавлена кнопка удаления пользователя
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад к списку", callback_data="admin_list")],
+            [InlineKeyboardButton(text="🗑️ Удалить пользователя", callback_data=f"admin_delete_user_{user_id}")],
             [InlineKeyboardButton(text="🔙 Админ функции", callback_data="admin_functions_back")]
         ])
         
@@ -332,6 +328,104 @@ async def admin_user_profile(callback: types.CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка просмотра профиля: {e}", exc_info=True)
         await callback.answer("❌ Ошибка", show_alert=True)
+
+# ============================================================
+# УДАЛЕНИЕ ПОЛЬЗОВАТЕЛЯ
+# ============================================================
+
+@router.callback_query(F.data.startswith("admin_delete_user_"))
+@admin_required
+async def admin_delete_user_confirm(callback: types.CallbackQuery, state: FSMContext):
+    """Подтверждение удаления пользователя"""
+    try:
+        user_id = int(callback.data.split("_")[-1])
+        
+        # Получаем ФИО пользователя
+        query = "SELECT fio FROM users WHERE user_id = %s"
+        result = db.execute_query(query, (user_id,), fetch=True)
+        
+        if not result:
+            await callback.answer("❌ Пользователь не найден", show_alert=True)
+            return
+        
+        fio = result[0].get('fio', 'Неизвестно') if isinstance(result[0], dict) else result[0][0]
+        
+        await state.update_data(delete_user_id=user_id, delete_user_fio=fio)
+        
+        await callback.message.answer(
+            f"⚠️ <b>ВНИМАНИЕ! Удаление пользователя</b>\n\n"
+            f"Вы собираетесь БЕЗВОЗВРАТНО удалить:\n"
+            f"👤 <b>{fio}</b>\n"
+            f"ID: <code>{user_id}</code>\n\n"
+            f"🗑️ <b>Будут удалены:</b>\n"
+            f"• Все данные пользователя\n"
+            f"• История полётов\n"
+            f"• Документы\n"
+            f"• Все связанные записи\n\n"
+            f"<b>❗ Это действие НЕЛЬЗЯ отменить!</b>\n\n"
+            f"Нажмите кнопку для подтверждения:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="❌ ДА, УДАЛИТЬ", callback_data=f"admin_delete_user_confirm_{user_id}")],
+                [InlineKeyboardButton(text="✅ ОТМЕНА", callback_data=f"admin_user_profile_{user_id}")]
+            ]),
+            parse_mode="HTML"
+        )
+        
+        await state.set_state(AdminDeleteUserState.confirm_delete)
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Ошибка при подготовке удаления: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка", show_alert=True)
+
+@router.callback_query(F.data.startswith("admin_delete_user_confirm_"))
+@admin_required
+async def admin_delete_user_execute(callback: types.CallbackQuery, state: FSMContext):
+    """Выполнение удаления пользователя"""
+    try:
+        user_id = int(callback.data.split("_")[-1])
+        
+        # Получаем данные из состояния
+        data = await state.get_data()
+        fio = data.get('delete_user_fio', 'Неизвестно')
+        
+        # Проверяем что нельзя удалить самого себя
+        if user_id == callback.from_user.id:
+            await callback.message.answer(
+                "❌ <b>Нельзя удалить самого себя!</b>\n\n"
+                "Выберите другого пользователя.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_list")]
+                ]),
+                parse_mode="HTML"
+            )
+            await state.clear()
+            await callback.answer()
+            return
+        
+        # Удаляем пользователя
+        success = db.delete_user(user_id)
+        
+        if success:
+            await callback.message.edit_text(
+                f"✅ <b>Пользователь удалён!</b>\n\n"
+                f"🗑️ {fio} (ID: {user_id})\n"
+                f"полностью удалён из базы данных.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 К списку пользователей", callback_data="admin_list")]
+                ]),
+                parse_mode="HTML"
+            )
+            logger.warning(f"⚠️ Админ {callback.from_user.id} удалил пользователя {user_id} ({fio})")
+        else:
+            await callback.message.answer("❌ Ошибка при удалении пользователя", parse_mode="HTML")
+        
+        await state.clear()
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Ошибка при удалении пользователя: {e}", exc_info=True)
+        await callback.answer("❌ Ошибка при удалении", show_alert=True)
 
 # ============================================================
 # СТАТИСТИКА
