@@ -136,9 +136,10 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
         callback_data="info_aerodrome_btn"
     )])
     
+    # 🔥 КНОПКА РЕДАКТИРОВАНИЯ (вместо "В главное меню")
     keyboard_buttons.append([InlineKeyboardButton(
-        text="🏠 В главное меню",
-        callback_data="info_back"
+        text="✏️ Редактировать",
+        callback_data=f"edit_aerodrome_{aerodrome['id']}"
     )])
     
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
@@ -162,4 +163,83 @@ async def aerodrome_selected(callback: types.CallbackQuery):
         
     except Exception as e:
         logger.error(f"❌ Ошибка при выборе аэродрома: {e}")
-       
+        await callback.answer("❌ Произошла ошибка", show_alert=True)
+
+@router.callback_query(F.data == "info_aerodrome_btn")
+async def info_aerodrome_back(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text(
+        "✈️ Поиск информации об аэродроме\n\n"
+        "Пожалуйста, напишите название аэродрома или города,\n"
+        "информация о котором вас интересует"
+    )
+    await state.set_state(KnowledgeState.aerodrome_search)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("aero_docs_"))
+async def aerodrome_documents_show(callback: types.CallbackQuery):
+    aerodrome_id = int(callback.data.split("_")[-1])
+    documents = get_aerodrome_documents(aerodrome_id)
+    
+    if not documents:
+        await callback.answer("📄 Документы не найдены", show_alert=True)
+        return
+    
+    text = "📄 Полезные документы:\n\n"
+    for doc in documents:
+        doc_type = doc['doc_type'] if doc.get('doc_type') else 'Документ'
+        text += f"• {doc['doc_name']} ({doc_type})\n"
+    
+    await callback.message.answer(text)
+    await callback.answer()
+
+# ============================================================
+# БЛОКИ БЕЗОПАСНОСТИ
+# ============================================================
+
+@router.callback_query(F.data == "info_safety")
+async def info_safety(callback: types.CallbackQuery):
+    await callback.message.edit_text(
+        "🛡️ Блоки по безопасности полетов\n\n"
+        "Выберите номер блока:"
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("safety_block_"))
+async def safety_block_show(callback: types.CallbackQuery):
+    block_number = int(callback.data.split("_")[-1])
+    block = get_safety_block_by_number(block_number)
+    
+    if not block:
+        await callback.answer("❌ Блок не найден", show_alert=True)
+        return
+    
+    await callback.message.edit_text(
+        f"🛡️ Блок безопасности №{block_number}\n\n"
+        f"{block['block_text']}"
+    )
+    await callback.answer()
+
+# ============================================================
+# ЗНАНИЯ О САМОЛЕТЕ
+# ============================================================
+
+@router.callback_query(F.data == "info_aircraft")
+async def info_aircraft(callback: types.CallbackQuery):
+    await callback.message.edit_text(
+        "✈️ Полезные сведения о самолете\n\n"
+        "Выберите тему:"
+    )
+    await callback.answer()
+
+# ============================================================
+# НАЗАД
+# ============================================================
+
+@router.callback_query(F.data == "info_back")
+async def info_back(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text(
+        "📚 Полезная информация\n\n"
+        "Выберите раздел:"
+    )
+    await callback.answer()
