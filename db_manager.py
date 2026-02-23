@@ -194,9 +194,6 @@ def delete_user(user_id: int):
         # Удаляем блоки безопасности созданные пользователем
         db.execute_query("DELETE FROM safety_blocks WHERE created_by = %s", (user_id,))
         
-        # Удаляем знания по самолётам созданные пользователем
-        db.execute_query("DELETE FROM aircraft_knowledge WHERE created_by = %s", (user_id,))
-        
         # Удаляем из админов
         db.execute_query("DELETE FROM admins WHERE user_id = %s", (user_id,))
         
@@ -209,7 +206,6 @@ def delete_user(user_id: int):
     except Exception as e:
         logger.error(f"❌ Ошибка при удалении пользователя {user_id}: {e}")
         return False
-
 # ============================================================
 # МЕТОДЫ ДЛЯ РАБОТЫ С АДМИНАМИ
 # ============================================================
