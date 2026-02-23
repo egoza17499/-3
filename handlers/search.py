@@ -1,60 +1,43 @@
+import logging
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from db_manager import db
-from utils.admin_check import admin_required_message, is_admin
-import logging
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-# ... (остальной код) ...
-
-@router.message(F.text)
-async def search_handler(message: types.Message):
-    """Обработчик поиска - ТЕПЕРЬ С ПРОВЕРКОЙ АДМИНА"""
+# Обработчик для поиска ПОЛЬЗОВАТЕЛЕЙ
+# ВАЖНО: Фильтр исключает сообщения когда пользователь в поиске аэродрома
+@router.message(
+    lambda msg: msg.text not in ["👤 Мой профиль", "📚 Полезная информация", "🛡️ Административные функции"]
+)
+async def search_users_handler(message: types.Message, state: FSMContext):
+    # Проверяем состояние
+    current_state = await state.get_state()
+    
+    # Если пользователь в поиске аэродрома — СРАЗУ ВЫХОДИМ
+    # Это позволит обработчику из knowledge.py обработать сообщение
+    if current_state == "KnowledgeState:aerodrome_search":
+        return  # Выходим — сообщение обработают другие обработчики
+    
+    # Ищем ПОЛЬЗОВАТЕЛЕЙ
     search_text = message.text.strip()
-    
-    # Проверяем, админ ли это
-    user_id = message.from_user.id
-    username = message.from_user.username
-    
-    if not await is_admin(user_id, username):
-        # Если не админ - игнорируем поиск по пользователям
-        # Можно отправить подсказку или просто проигнорировать
-        return
-    
-    # Поиск пользователей (только для админов)
     users = db.search_users(search_text)
     
-    if not users:
-        await message.answer(f"❌ Пользователи по запросу \"{search_text}\" не найдены")
-        return
-    
-    text = f"🔍 Найдено пользователей: {len(users)}\n\n"
-    
-    keyboard = []
-    
-    for user in users[:10]:  # Показываем первые 10 результатов
-        user_id_db = user[0]
-        username_db = user[1] or "N/A"
-        fio = user[3] or "Не указано"
-        rank = user[4] or "Не указано"
+    if users:
+        text = f"🔍 Найдено пользователей: {len(users)}\n\n"
+        for user in users:
+            user_id = user[0]
+            username = user[1] or ""
+            fio = user[3] or "Не указано"
+            rank = user[4] or ""
+            
+            text += f"👤 {fio}\n"
+            text += f"✈️ @{username}\n"
+            if rank:
+                text += f"🎖 {rank}\n"
+            text += "\n"
         
-        text += f"👤 {fio}\n"
-        text += f"   @{username_db}\n"
-        text += f"   {rank}\n\n"
-        
-        keyboard.append([InlineKeyboardButton(
-            text=f"👤 {fio}",
-            callback_data=f"admin_user_profile_{user_id_db}"
-        )])
-    
-    keyboard.append([InlineKeyboardButton(
-        text="🔙 Назад",
-        callback_data="admin_functions"
-    )])
-    
-    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-    
-    await message.answer(text, reply_markup=reply_markup)
+        await message.answer(text)
+    else:
+        await message.answer(f"❌ Пользователь \"{search_text}\" не найден")
