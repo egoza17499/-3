@@ -76,10 +76,10 @@ def setup_routers():
         from handlers import registration # 2. Регистрация
         from handlers import menu         # 3. Главное меню
         from handlers import profile      # 4. Профиль
+        from handlers import group
         from handlers import knowledge    # 5. Поиск аэродромов (ДО search!)
         from handlers import edit_aerodrome # 6. Редактирование аэродромов
-        from handlers import admin        # 7. Админ функции
-        from handlers import group
+        from handlers import admin        # 7. Админ функции        
         from handlers import search       # 8. Поиск пользователей (только админ)
         
                
@@ -97,6 +97,8 @@ def setup_routers():
         dp.include_router(profile.router)
         logger.info("✅ profile зарегистрирован")
         
+        dp.include_router(group.router)
+        
         # ВАЖНО: knowledge ДОЛЖЕН БЫТЬ ДО search!
         # Иначе search перехватит все текстовые сообщения
         dp.include_router(knowledge.router)
@@ -104,8 +106,6 @@ def setup_routers():
         
         dp.include_router(edit_aerodrome.router)
         logger.info("✅ edit_aerodrome зарегистрирован")
-
-        dp.include_router(group.router)
 
         dp.include_router(search.router)
         logger.info("✅ search зарегистрирован")
