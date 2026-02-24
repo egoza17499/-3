@@ -59,6 +59,21 @@ if not DATABASE_URL:
 logger.info("✅ PostgreSQL URL найден")
 
 # ============================================================================
+# YANDEX DISK SETTINGS
+# ============================================================================
+
+YANDEX_DISK_TOKEN = os.getenv("YANDEX_DISK_TOKEN")
+if not YANDEX_DISK_TOKEN:
+    logger.warning("⚠️ YANDEX_DISK_TOKEN не найден! Функция блоков безопасности будет недоступна.")
+    YANDEX_DISK_TOKEN = ""
+
+YANDEX_DISK_FOLDER = os.getenv("YANDEX_DISK_FOLDER", "/Blocks")
+
+if YANDEX_DISK_TOKEN:
+    logger.info("✅ Yandex Disk токен найден")
+    logger.info(f"📁 Папка на диске: {YANDEX_DISK_FOLDER}")
+
+# ============================================================================
 # DATE AND VALIDATION SETTINGS
 # ============================================================================
 
