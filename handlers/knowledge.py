@@ -1,4 +1,5 @@
 import logging
+import re
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -45,6 +46,13 @@ async def aerodrome_search_handler(message: types.Message):
     logger.info(f"🔍 ДОШЛО ДО ОБРАБОТЧИКА! Текст: {message.text}")
     
     search_text = message.text.strip()
+    
+    # ❌ ИГНОРИРУЕМ команды для блоков безопасности
+    # Чтобы они обрабатывались в group.py
+    if re.match(r'^(блок\s*№?\s*\d+)$', search_text, re.IGNORECASE):
+        logger.info(f"⏭️ Пропускаем команду блока: '{search_text}'")
+        return
+    
     logger.info(f"✈️ Поиск аэродрома: '{search_text}'")
     
     # Ищем ВСЕ аэродромы в городе
