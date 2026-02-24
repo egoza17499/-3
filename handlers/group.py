@@ -96,7 +96,7 @@ async def handle_group_help(message: types.Message):
 
 @router.message(
     F.chat.type.in_({"group", "supergroup"}),
-    F.text.regexp(r'^(блок\s*№?\s*\d+|№\s*\d+)$', re.IGNORECASE)
+    F.text.regexp(re.compile(r'^(блок\s*№?\s*\d+|№\s*\d+)$', re.IGNORECASE)) 
 )
 async def group_safety_block_from_disk(message: types.Message):
     """Показать блок безопасности из Yandex Disk"""
