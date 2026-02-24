@@ -45,10 +45,87 @@ async def group_message_handler(message: types.Message):
         await group_safety_blocks_list(message)
         return
     
-    # Обработка команд типа "блок 1", "блок №1", "№ 1" и т.д.
-    if text and re.match(r'^(блок\s*№?\s*\d+|№\s*\d+)$', text, re.IGNORECASE):
-        await group_safety_block_from_disk(message)
+   # ============================================================
+# БЛОКИ БЕЗОПАСНОСТИ ИЗ YANDEX DISK (ОТДЕЛЬНЫЙ ОБРАБОТЧИК)
+# ============================================================
+
+@router.message(
+    F.chat.type.in_({"group", "supergroup"}),
+    F.text.regexp(re.compile(r'^(блок\s*№?\s*\d+)$', re.IGNORECASE))
+)
+async def group_safety_block_from_disk(message: types.Message):
+    """Показать блок безопасности из Yandex Disk"""
+    
+    if message.chat.id != GROUP_ID:
         return
+    
+    try:
+        from utils.yandex_disk_client import disk_client
+    except ImportError:
+        logger.error("❌ Модуль Yandex Disk не подключен!")
+        return
+    
+    # Извлекаем номер блока
+    text = message.text.lower()
+    match = re.search(r'(\d+)', text)
+    
+    if not match:
+        return
+    
+    block_number = int(match.group(1))
+    logger.info(f"🔍 Запрос блока {block_number} от {message.from_user.username}")
+    
+    # Ищем файл на Yandex Disk
+    files = disk_client.list_files()
+    
+    # Пробуем разные форматы и названия
+    possible_names = [
+        f"block_{block_number}.docx",
+        f"block_{block_number}.pdf",
+        f"block_{block_number}.txt",
+        f"блок_{block_number}.docx",
+        f"блок_{block_number}.pdf",
+        f"блок_{block_number}.txt",
+        f"Блок_{block_number}.docx",
+        f"Блок_{block_number}.pdf",
+    ]
+    
+    file_info = None
+    for name in possible_names:
+        file_info = next((f for f in files if f['name'].lower() == name.lower()), None)
+        if file_info:
+            logger.info(f"✅ Найден файл: {file_info['name']}")
+            break
+    
+    if not file_info:
+        await message.answer(
+            f"❌ <b>Блок №{block_number} не найден!</b>\n\n"
+            "Используйте /блоки для просмотра списка.",
+            parse_mode="HTML"
+        )
+        return
+    
+    # Получаем ссылку
+    download_link = disk_client.get_file_link(file_info['name'])
+    
+    if not download_link:
+        await message.answer("❌ Ошибка при получении файла.")
+        return
+    
+    # Отправляем файл
+    file_size = file_info['size']
+    size_str = f"{file_size / 1024:.1f} KB" if file_size < 1024*1024 else f"{file_size / (1024*1024):.1f} MB"
+    
+    await message.answer_document(
+        document=download_link,
+        caption=f"🛡 <b>Блок безопасности №{block_number}</b>\n\n"
+                f"📄 {file_info['name']}\n"
+                f"📏 {size_str}\n\n"
+                f"💡 <i>Сохраните!</i>",
+        parse_mode="HTML"
+    )
+    
+    logger.info(f"📤 Блок {block_number} отправлен {message.from_user.username}")
 
 async def handle_group_profile(message: types.Message, user_id: int):
     """Показать профиль пользователя в группе"""
