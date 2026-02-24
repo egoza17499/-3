@@ -79,8 +79,9 @@ def setup_routers():
         from handlers import knowledge    # 5. Поиск аэродромов (ДО search!)
         from handlers import edit_aerodrome # 6. Редактирование аэродромов
         from handlers import admin        # 7. Админ функции
-        from handlers import search       # 8. Поиск пользователей (только админ)
         from handlers import group
+        from handlers import search       # 8. Поиск пользователей (только админ)
+        
                
         
         # Регистрируем роутеры (порядок важен!)
@@ -104,14 +105,14 @@ def setup_routers():
         dp.include_router(edit_aerodrome.router)
         logger.info("✅ edit_aerodrome зарегистрирован")
 
+        dp.include_router(group.router)
+
+        dp.include_router(search.router)
+        logger.info("✅ search зарегистрирован")
+
         dp.include_router(admin.router)
         logger.info("✅ admin зарегистрирован")
         
-        dp.include_router(search.router)
-        logger.info("✅ search зарегистрирован")
-        
-        dp.include_router(group.router)
-             
         logger.info("✅ Все роутеры зарегистрированы успешно!")
         
     except ImportError as e:
