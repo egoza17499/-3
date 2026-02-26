@@ -4,7 +4,7 @@ from aiogram import Router, F, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from config import GROUP_ID
 from utils.admin_check import is_admin
-from utils.yandex_disk_client import disk_client  # ✅ ИМПОРТ СНАЧАЛА!
+from utils.yandex_disk_client import disk_client
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -47,24 +47,24 @@ async def group_safety_block_from_disk(message: types.Message):
     
     # Пробуем разные форматы и названия
     possible_names = [
-    f"block_{block_number}.docx",
-    f"block_{block_number}.pdf",
-    f"block_{block_number}.txt",
-    f"blocks_{block_number}.docx",      # ✅ ДОБАВЛЕНО!
-    f"blocks_{block_number}.pdf",       # ✅ ДОБАВЛЕНО!
-    f"blocks_{block_number}.txt",       # ✅ ДОБАВЛЕНО!
-    f"блок_{block_number}.docx",
-    f"блок_{block_number}.pdf",
-    f"блок_{block_number}.txt",
-    f"блоки_{block_number}.docx",       # ✅ ДОБАВЛЕНО!
-    f"блоки_{block_number}.pdf",        # ✅ ДОБАВЛЕНО!
-    f"блоки_{block_number}.txt",        # ✅ ДОБАВЛЕНО!
-    f"Блок_{block_number}.docx",
-    f"Блок_{block_number}.pdf",
-    f"Блок_{block_number}.txt",
-    f"Блоки_{block_number}.docx",       # ✅ ДОБАВЛЕНО!
-    f"Блоки_{block_number}.pdf",        # ✅ ДОБАВЛЕНО!
-]
+        f"block_{block_number}.docx",
+        f"block_{block_number}.pdf",
+        f"block_{block_number}.txt",
+        f"blocks_{block_number}.docx",
+        f"blocks_{block_number}.pdf",
+        f"blocks_{block_number}.txt",
+        f"блок_{block_number}.docx",
+        f"блок_{block_number}.pdf",
+        f"блок_{block_number}.txt",
+        f"блоки_{block_number}.docx",
+        f"блоки_{block_number}.pdf",
+        f"блоки_{block_number}.txt",
+        f"Блок_{block_number}.docx",
+        f"Блок_{block_number}.pdf",
+        f"Блок_{block_number}.txt",
+        f"Блоки_{block_number}.docx",
+        f"Блоки_{block_number}.pdf",
+    ]
     
     file_info = None
     for name in possible_names:
@@ -81,19 +81,20 @@ async def group_safety_block_from_disk(message: types.Message):
         )
         return
     
-    # Получаем ссылку
-    download_link = disk_client.get_file_link(file_info['name'])
+    # 🔥 СКАЧИВАЕМ ФАЙЛ В ПАМЯТЬ (вместо получения ссылки!)
+    file_content = disk_client.download_file(file_info['name'])
     
-    if not download_link:
-        await message.answer("❌ Ошибка при получении файла.")
+    if not file_content:
+        await message.answer("❌ Ошибка при скачивании файла.")
         return
     
-    # Отправляем файл
+    # Форматируем размер
     file_size = file_info['size']
     size_str = f"{file_size / 1024:.1f} KB" if file_size < 1024*1024 else f"{file_size / (1024*1024):.1f} MB"
     
+    # 🔥 ОТПРАВЛЯЕМ ФАЙЛ ИЗ ПАМЯТИ (bytes)
     await message.answer_document(
-        document=download_link,
+        document=file_content,  # ✅ bytes, а не URL!
         caption=f"🛡 <b>Блок безопасности №{block_number}</b>\n\n"
                 f"📄 {file_info['name']}\n"
                 f"📏 {size_str}\n\n"
@@ -247,6 +248,8 @@ async def group_block_file_callback(callback: types.CallbackQuery):
             f"block_{block_number}.docx",
             f"block_{block_number}.pdf",
             f"block_{block_number}.txt",
+            f"blocks_{block_number}.docx",
+            f"blocks_{block_number}.pdf",
         ]
         
         file_info = None
@@ -259,14 +262,16 @@ async def group_block_file_callback(callback: types.CallbackQuery):
             await callback.answer("❌ Файл не найден", show_alert=True)
             return
         
-        download_link = disk_client.get_file_link(file_info['name'])
+        # 🔥 СКАЧИВАЕМ ФАЙЛ В ПАМЯТЬ
+        file_content = disk_client.download_file(file_info['name'])
         
-        if not download_link:
-            await callback.answer("❌ Ошибка получения ссылки", show_alert=True)
+        if not file_content:
+            await callback.answer("❌ Ошибка при скачивании файла", show_alert=True)
             return
         
+        # 🔥 ОТПРАВЛЯЕМ ФАЙЛ ИЗ ПАМЯТИ
         await callback.message.answer_document(
-            document=download_link,
+            document=file_content,  # ✅ bytes, а не URL!
             caption=f"🛡 <b>Блок безопасности №{block_number}</b>\n\n"
                     f"📄 {file_info['name']}\n\n"
                     f"💡 <i>Сохраните!</i>",
