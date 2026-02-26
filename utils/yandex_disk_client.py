@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 class YandexDiskClient:
     def __init__(self, token):
         self.token = token
-        self.base_url = "https://cloud-api.yandex.net/v1/disk"
+        self.base_url = "https://cloud-api.yandex.net/v1/disk"  # ✅ Без пробелов!
         self.headers = {"Authorization": f"OAuth {token}"}
     
     def get_file_link(self, file_path):
@@ -66,6 +66,13 @@ class YandexDiskClient:
         files = self.list_files()
         return any(f['name'].lower() == file_name.lower() for f in files)
 
-# Глобальный клиент
-disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
-logger.info("✅ Yandex Disk клиент инициализирован")
+# ============================================================
+# ГЛОБАЛЬНЫЙ КЛИЕНТ (с проверкой токена!)
+# ============================================================
+
+if YANDEX_DISK_TOKEN:
+    disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+    logger.info("✅ Yandex Disk клиент инициализирован")
+else:
+    disk_client = None
+    logger.warning("⚠️ YANDEX_DISK_TOKEN не найден!")
