@@ -1,3 +1,5 @@
-aiogram>=3.0.0
-aiohttp>=3.9.0
-psycopg2-binary>=2.9.0
+aiogram==3.4.1
+psycopg2-binary==2.9.9
+aiohttp==3.9.3
+requests==2.31.0          # ✅ ДОБАВЬТЕ ЭТУ СТРОКУ!
+python-dotenv==1.0.1
