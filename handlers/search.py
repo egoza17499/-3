@@ -1,26 +1,14 @@
-import logging
-import re
-from aiogram import Router, F, types
-from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from db_manager import db
-from utils.admin_check import admin_required_message, is_admin
-
-logger = logging.getLogger(__name__)
-router = Router()
-
-# ============================================================
-# ОБРАБОТЧИК ПОИСКА ПОЛЬЗОВАТЕЛЕЙ (ТОЛЬКО ДЛЯ АДМИНОВ)
-# ⚠️ Работает ТОЛЬКО в личных сообщениях!
-# ============================================================
-
-@router.message(F.text, F.chat.type == "private")  # ✅ ФИЛЬТР В ДЕКОРАТОРЕ!
+@router.message(F.text)
 async def search_handler(message: types.Message):
-    """Обработчик поиска пользователей — только в ЛС и только для админов"""
+    """Обработчик поиска — только в ЛС и только для админов"""
+    
+    # ❌ ПЕРВАЯ ПРОВЕРКА — игнорируем группы!
+    if message.chat.type != "private":
+        return  # ← ВАЖНО! Не обрабатываем группы
     
     search_text = message.text.strip()
     
-    # ❌ ИГНОРИРУЕМ команды для блоков безопасности
+    # ❌ Игнорируем команды для блоков безопасности
     if re.match(r'^(блок\s*№?\s*\d+)$', search_text, re.IGNORECASE):
         logger.info(f"⏭️ Пропускаем команду блока: '{search_text}'")
         return
