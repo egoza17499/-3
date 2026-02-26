@@ -10,18 +10,18 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 # ============================================================
-# ОБРАБОТЧИК ПОИСКА
+# ОБРАБОТЧИК ПОИСКА (ТОЛЬКО ЛИЧНЫЕ СООБЩЕНИЯ!)
 # ============================================================
 
-@router.message(F.text, F.chat.type == "private")
+@router.message(F.text, F.chat.type == "private")  # ✅ ТОЛЬКО ЛС!
 async def search_handler(message: types.Message):
-    """Обработчик поиска — с исключением для блоков безопасности"""
+    """Обработчик поиска — только в личных сообщениях"""
     
     search_text = message.text.strip()
     
- 
+    # ❌ Игнорируем команды для блоков безопасности
     if re.match(r'^(блок\s*№?\s*\d+)$', search_text, re.IGNORECASE):
-        logger.info(f"⏭️ Пропускаем команду блока в search: '{search_text}'")
+        logger.info(f"⏭️ Пропускаем команду блока: '{search_text}'")
         return
     
     # Проверяем, админ ли это
@@ -29,7 +29,6 @@ async def search_handler(message: types.Message):
     username = message.from_user.username
     
     if not await is_admin(user_id, username):
-        # Если не админ — игнорируем поиск по пользователям
         logger.info(f"⏭️ Пропускаем (не админ): '{search_text}'")
         return
     
@@ -45,7 +44,7 @@ async def search_handler(message: types.Message):
     
     keyboard = []
     
-    for user in users[:10]:  # Показываем первые 10 результатов
+    for user in users[:10]:
         user_id_db = user[0]
         username_db = user[1] or "N/A"
         fio = user[3] or "Не указано"
