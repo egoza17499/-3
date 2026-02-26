@@ -1,10 +1,25 @@
+import logging
+import re
+from aiogram import Router, F, types
+from aiogram.fsm.context import FSMContext
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from db_manager import db
+from utils.admin_check import admin_required_message, is_admin
+
+logger = logging.getLogger(__name__)
+router = Router()  # ✅ Создаём router
+
+# ============================================================
+# ОБРАБОТЧИК ПОИСКА ПОЛЬЗОВАТЕЛЕЙ (ТОЛЬКО ДЛЯ АДМИНОВ)
+# ============================================================
+
 @router.message(F.text)
 async def search_handler(message: types.Message):
     """Обработчик поиска — только в ЛС и только для админов"""
     
     # ❌ ПЕРВАЯ ПРОВЕРКА — игнорируем группы!
     if message.chat.type != "private":
-        return  # ← ВАЖНО! Не обрабатываем группы
+        return
     
     search_text = message.text.strip()
     
