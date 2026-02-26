@@ -15,7 +15,6 @@ class YandexDiskClient:
         try:
             full_path = f"{YANDEX_DISK_FOLDER}/{file_path}"
             
-            # Пробуем получить прямую ссылку через API
             response = requests.get(
                 f"{self.base_url}/resources/download",
                 headers=self.headers,
@@ -27,37 +26,51 @@ class YandexDiskClient:
                 data = response.json()
                 direct_link = data.get("href")
                 if direct_link:
-                    logger.info(f"✅ Получена прямая ссылка на файл: {file_path}")
+                    logger.info(f"✅ Получена ссылка на файл: {file_path}")
                     return direct_link
-            
-            logger.warning(f"⚠️ Прямая ссылка не доступна, пробуем публичную...")
-            
-            # Пробуем получить публичную ссылку
-            response = requests.get(
-                f"{self.base_url}/resources",
-                headers=self.headers,
-                params={"path": full_path},
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                public_url = data.get("public_url")
-                if public_url:
-                    logger.info(f"✅ Получена публичная ссылка: {public_url}")
-                    return public_url
             
             logger.error(f"❌ Не удалось получить ссылку на файл: {file_path}")
             return None
                 
         except requests.exceptions.Timeout:
-            logger.error(f"❌ Тайм-аут при запросе к Yandex Disk для файла: {file_path}")
+            logger.error(f"❌ Тайм-аут при получении ссылки: {file_path}")
             return None
         except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Ошибка запроса к Yandex Disk: {e}")
+            logger.error(f"❌ Ошибка запроса: {e}")
             return None
         except Exception as e:
-            logger.error(f"❌ Неизвестная ошибка Yandex Disk: {e}")
+            logger.error(f"❌ Неизвестная ошибка: {e}")
+            return None
+    
+    def download_file(self, file_path):
+        """Скачать файл в память (bytes)"""
+        try:
+            # Сначала получаем ссылку для скачивания
+            download_url = self.get_file_link(file_path)
+            
+            if not download_url:
+                logger.error(f"❌ Не удалось получить ссылку для скачивания: {file_path}")
+                return None
+            
+            # Скачиваем файл по ссылке
+            response = requests.get(download_url, timeout=30)
+            
+            if response.status_code == 200:
+                file_size = len(response.content)
+                logger.info(f"✅ Файл скачан: {file_path} ({file_size} байт)")
+                return response.content
+            else:
+                logger.error(f"❌ Ошибка скачивания файла ({response.status_code}): {response.text}")
+                return None
+                
+        except requests.exceptions.Timeout:
+            logger.error(f"❌ Тайм-аут при скачивании файла: {file_path}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Ошибка запроса при скачивании: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Неизвестная ошибка при скачивании: {e}")
             return None
     
     def list_files(self):
@@ -101,8 +114,24 @@ class YandexDiskClient:
     
     def file_exists(self, file_name):
         """Проверить существует ли файл"""
-        files = self.list_files()
-        return any(f['name'].lower() == file_name.lower() for f in files)
+        try:
+            files = self.list_files()
+            return any(f['name'].lower() == file_name.lower() for f in files)
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки существования файла: {e}")
+            return False
+    
+    def get_file_info(self, file_name):
+        """Получить информацию о файле"""
+        try:
+            files = self.list_files()
+            for f in files:
+                if f['name'].lower() == file_name.lower():
+                    return f
+            return None
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения информации о файле: {e}")
+            return None
 
 # ============================================================
 # ГЛОБАЛЬНЫЙ КЛИЕНТ (с проверкой токена!)
