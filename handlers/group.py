@@ -47,15 +47,24 @@ async def group_safety_block_from_disk(message: types.Message):
     
     # Пробуем разные форматы и названия
     possible_names = [
-        f"block_{block_number}.docx",
-        f"block_{block_number}.pdf",
-        f"block_{block_number}.txt",
-        f"блок_{block_number}.docx",
-        f"блок_{block_number}.pdf",
-        f"блок_{block_number}.txt",
-        f"Блок_{block_number}.docx",
-        f"Блок_{block_number}.pdf",
-    ]
+    f"block_{block_number}.docx",
+    f"block_{block_number}.pdf",
+    f"block_{block_number}.txt",
+    f"blocks_{block_number}.docx",      # ✅ ДОБАВЛЕНО!
+    f"blocks_{block_number}.pdf",       # ✅ ДОБАВЛЕНО!
+    f"blocks_{block_number}.txt",       # ✅ ДОБАВЛЕНО!
+    f"блок_{block_number}.docx",
+    f"блок_{block_number}.pdf",
+    f"блок_{block_number}.txt",
+    f"блоки_{block_number}.docx",       # ✅ ДОБАВЛЕНО!
+    f"блоки_{block_number}.pdf",        # ✅ ДОБАВЛЕНО!
+    f"блоки_{block_number}.txt",        # ✅ ДОБАВЛЕНО!
+    f"Блок_{block_number}.docx",
+    f"Блок_{block_number}.pdf",
+    f"Блок_{block_number}.txt",
+    f"Блоки_{block_number}.docx",       # ✅ ДОБАВЛЕНО!
+    f"Блоки_{block_number}.pdf",        # ✅ ДОБАВЛЕНО!
+]
     
     file_info = None
     for name in possible_names:
