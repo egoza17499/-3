@@ -13,9 +13,21 @@ router = Router()
 # ОБРАБОТЧИК ПОИСКА ПОЛЬЗОВАТЕЛЕЙ (ТОЛЬКО ДЛЯ АДМИНОВ)
 # ============================================================
 
-@router.message(F.text, ~F.text.regexp(r'^(блок\s*№?\s*\d+)$'))  # ✅ ИСКЛЮЧАЕМ команды блоков!
-async def search_handler(message: types.Message):
-    """Обработчик поиска — только в ЛС и только для админов"""
+@router.message(
+    F.text.regexp(re.compile(r'^(блок\s*№?\s*\d+)$', re.IGNORECASE))
+)
+async def group_safety_block_from_disk(message: types.Message):
+    """Показать блок безопасности из Yandex Disk — работает и в ЛС, и в группе!"""
+    
+    # Проверяем что это наша группа ИЛИ личное сообщение
+    if message.chat.id != GROUP_ID and message.chat.type != "private":
+        return
+    
+    try:
+        from utils.yandex_disk_client import disk_client
+    except ImportError:
+        logger.error("❌ Модуль Yandex Disk не подключен!")
+        return
     
     # 🔥 САМАЯ ПЕРВАЯ ПРОВЕРКА — игнорируем ВСЕ группы!
     if message.chat.type != "private":
