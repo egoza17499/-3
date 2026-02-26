@@ -9,23 +9,25 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 # ============================================================
-# 🔥 БЛОКИ БЕЗОПАСНОСТИ ИЗ YANDEX DISK (ОТДЕЛЬНЫЙ ОБРАБОТЧИК)
-# ⚠️ ДОЛЖЕН БЫТЬ ПЕРЕД ОБЩИМ ОБРАБОТЧИКОМ!
+# 🔥 БЛОКИ БЕЗОПАСНОСТИ ИЗ YANDEX DISK
+# ✅ Работает и в ЛС, и в группе!
 # ============================================================
 
 @router.message(
-    F.text.regexp(re.compile(r'^(блок\s*№?\s*\d+)$', re.IGNORECASE))  # ✅ И ЛС, и группы!
+    F.text.regexp(re.compile(r'^(блок\s*№?\s*\d+)$', re.IGNORECASE))
 )
 async def group_safety_block_from_disk(message: types.Message):
     """Показать блок безопасности из Yandex Disk"""
     
-    if message.chat.id != GROUP_ID:
+    # Проверяем что это наша группа ИЛИ личное сообщение
+    if message.chat.id != GROUP_ID and message.chat.type != "private":
         return
     
     try:
         from utils.yandex_disk_client import disk_client
     except ImportError:
         logger.error("❌ Модуль Yandex Disk не подключен!")
+        await message.answer("❌ Ошибка модуля. Обратитесь к администратору.")
         return
     
     # Извлекаем номер блока
@@ -36,10 +38,9 @@ async def group_safety_block_from_disk(message: types.Message):
         return
     
     block_number = int(match.group(1))
-    username = message.from_user.username
-    user_id = message.from_user.id
+    username = message.from_user.username or f"user_{message.from_user.id}"
     
-    logger.info(f"🔍 Запрос блока {block_number} от {username} ({user_id})")
+    logger.info(f"🔍 Запрос блока {block_number} от {username}")
     
     # Ищем файл на Yandex Disk
     files = disk_client.list_files()
@@ -95,18 +96,15 @@ async def group_safety_block_from_disk(message: types.Message):
 
 # ============================================================
 # ОБРАБОТКА СООБЩЕНИЙ В ГРУППЕ (ОБЩИЙ ОБРАБОТЧИК)
-# ⚠️ ДОЛЖЕН БЫТЬ ПОСЛЕ СПЕЦИФИЧНЫХ!
 # ============================================================
 
 @router.message(F.chat.type.in_({"group", "supergroup"}))
 async def group_message_handler(message: types.Message):
     """Обработка сообщений в группе"""
     
-    # Игнорируем сообщения от ботов
     if message.from_user.is_bot:
         return
     
-    # Проверяем что это наша группа
     if message.chat.id != GROUP_ID:
         return
     
@@ -116,24 +114,17 @@ async def group_message_handler(message: types.Message):
     
     logger.info(f"💬 Сообщение в группе от {username} ({user_id}): {text[:50] if text else 'медиа'}")
     
-    # Команда /профиль в группе
     if text and text.startswith('/профиль'):
         await handle_group_profile(message, user_id)
         return
     
-    # Команда /помощь в группе
     if text and (text.startswith('/помощь') or text.startswith('/help')):
         await handle_group_help(message)
         return
     
-    # Команда /блоки в группе
     if text and text.startswith('/блоки'):
         await group_safety_blocks_list(message)
         return
-
-# ============================================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-# ============================================================
 
 async def handle_group_profile(message: types.Message, user_id: int):
     """Показать профиль пользователя в группе"""
@@ -179,12 +170,9 @@ async def handle_group_help(message: types.Message):
 # СПИСОК БЛОКОВ БЕЗОПАСНОСТИ
 # ============================================================
 
-@router.message(F.chat.type.in_({"group", "supergroup"}), F.text.startswith("/блоки"))
+@router.message(F.text.startswith("/блоки"))
 async def group_safety_blocks_list(message: types.Message):
     """Показать список всех блоков из Yandex Disk"""
-    
-    if message.chat.id != GROUP_ID:
-        return
     
     try:
         from utils.yandex_disk_client import disk_client
@@ -195,16 +183,12 @@ async def group_safety_blocks_list(message: types.Message):
     files = disk_client.list_files()
     
     if not files:
-        await message.answer(
-            "❌ На диске нет блоков безопасности.\n\n"
-            "Обратитесь к администратору."
-        )
+        await message.answer("❌ На диске нет блоков безопасности.")
         return
     
     text = "🛡 <b>Блоки безопасности:</b>\n\n"
     keyboard_buttons = []
     
-    # Сортируем файлы по номеру блока
     def extract_block_number(filename):
         match = re.search(r'(\d+)', filename)
         return int(match.group(1)) if match else 999
@@ -212,24 +196,15 @@ async def group_safety_blocks_list(message: types.Message):
     sorted_files = sorted(files, key=lambda x: extract_block_number(x['name']))
     
     for file_info in sorted_files:
-        # Извлекаем номер из имени файла
         match = re.search(r'(\d+)', file_info['name'])
         
         if match:
             block_number = match.group(1)
-            
-            # Форматируем размер
             file_size = file_info['size']
-            if file_size < 1024:
-                size_str = f"{file_size} B"
-            elif file_size < 1024 * 1024:
-                size_str = f"{file_size / 1024:.1f} KB"
-            else:
-                size_str = f"{file_size / (1024 * 1024):.1f} MB"
+            size_str = f"{file_size / 1024:.1f} KB" if file_size < 1024*1024 else f"{file_size / (1024*1024):.1f} MB"
             
             text += f"<b>Блок {block_number}:</b> {file_info['name']} ({size_str})\n"
             
-            # Добавляем кнопку
             keyboard_buttons.append([
                 InlineKeyboardButton(
                     text=f"🛡 Блок {block_number}",
@@ -237,7 +212,6 @@ async def group_safety_blocks_list(message: types.Message):
                 )
             ])
     
-    # Кнопка закрытия
     keyboard_buttons.append([InlineKeyboardButton(text="🔙 Закрыть", callback_data="group_close")])
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     
@@ -260,15 +234,12 @@ async def group_block_file_callback(callback: types.CallbackQuery):
     try:
         block_number = int(callback.data.split("_")[-1])
         
-        # Ищем файл
         files = disk_client.list_files()
         
         possible_names = [
             f"block_{block_number}.docx",
             f"block_{block_number}.pdf",
             f"block_{block_number}.txt",
-            f"блок_{block_number}.docx",
-            f"блок_{block_number}.pdf",
         ]
         
         file_info = None
@@ -281,14 +252,12 @@ async def group_block_file_callback(callback: types.CallbackQuery):
             await callback.answer("❌ Файл не найден", show_alert=True)
             return
         
-        # Получаем ссылку
         download_link = disk_client.get_file_link(file_info['name'])
         
         if not download_link:
             await callback.answer("❌ Ошибка получения ссылки", show_alert=True)
             return
         
-        # Отправляем файл
         await callback.message.answer_document(
             document=download_link,
             caption=f"🛡 <b>Блок безопасности №{block_number}</b>\n\n"
@@ -324,8 +293,7 @@ async def bot_mention_handler(message: types.Message):
         return
     
     await message.answer(
-        "👋 Я здесь! Напишите /помощь для списка команд.\n"
-        "Или обратитесь ко мне в личные сообщения."
+        "👋 Я здесь! Напишите /помощь для списка команд."
     )
 
 # ============================================================
@@ -336,26 +304,11 @@ async def bot_mention_handler(message: types.Message):
 async def bot_chat_member_handler(message: types.ChatMemberUpdated):
     """Обработка изменения статуса бота в чате"""
     
-    old_status = message.old_chat_member.status
     new_status = message.new_chat_member.status
     
     if new_status == 'member':
-        logger.info(f"➕ Бот добавлен в чат {message.chat.title} (ID: {message.chat.id})")
+        logger.info(f"➕ Бот добавлен в чат {message.chat.title}")
     elif new_status == 'administrator':
         logger.info(f"⭐ Бот стал администратором в {message.chat.title}")
     elif new_status == 'left':
         logger.info(f"➖ Бот покинул чат {message.chat.title}")
-
-# ============================================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-# ============================================================
-
-async def is_bot_admin(chat_id: int) -> bool:
-    """Проверить является ли бот администратором в чате"""
-    from main import bot
-    
-    try:
-        member = await bot.get_chat_member(chat_id, bot.id)
-        return member.is_chat_admin()
-    except:
-        return False
