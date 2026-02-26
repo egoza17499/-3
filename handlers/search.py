@@ -11,21 +11,16 @@ router = Router()
 
 # ============================================================
 # ОБРАБОТЧИК ПОИСКА ПОЛЬЗОВАТЕЛЕЙ (ТОЛЬКО ДЛЯ АДМИНОВ)
-# Работает ТОЛЬКО в личных сообщениях!
+# ⚠️ Работает ТОЛЬКО в личных сообщениях!
 # ============================================================
 
-@router.message(F.text)
+@router.message(F.text, F.chat.type == "private")  # ✅ ФИЛЬТР В ДЕКОРАТОРЕ!
 async def search_handler(message: types.Message):
     """Обработчик поиска пользователей — только в ЛС и только для админов"""
-    
-    # ❌ ИГНОРИРУЕМ сообщения из групп и каналов
-    if message.chat.type != "private":
-        return
     
     search_text = message.text.strip()
     
     # ❌ ИГНОРИРУЕМ команды для блоков безопасности
-    # Чтобы они обрабатывались в group.py
     if re.match(r'^(блок\s*№?\s*\d+)$', search_text, re.IGNORECASE):
         logger.info(f"⏭️ Пропускаем команду блока: '{search_text}'")
         return
@@ -50,7 +45,7 @@ async def search_handler(message: types.Message):
     
     keyboard = []
     
-    for user in users[:10]:  # Показываем первые 10 результатов
+    for user in users[:10]:
         user_id_db = user[0]
         username_db = user[1] or "N/A"
         fio = user[3] or "Не указано"
