@@ -13,14 +13,13 @@ router = Router()
 # ОБРАБОТЧИК ПОИСКА
 # ============================================================
 
-@router.message(F.text)
+@router.message(F.text, F.chat.type == "private")
 async def search_handler(message: types.Message):
     """Обработчик поиска — с исключением для блоков безопасности"""
     
     search_text = message.text.strip()
     
-    # ❌ ИГНОРИРУЕМ команды для блоков безопасности
-    # Чтобы они обрабатывались в group.py
+ 
     if re.match(r'^(блок\s*№?\s*\d+)$', search_text, re.IGNORECASE):
         logger.info(f"⏭️ Пропускаем команду блока в search: '{search_text}'")
         return
