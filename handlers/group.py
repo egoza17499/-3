@@ -4,6 +4,7 @@ from aiogram import Router, F, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from config import GROUP_ID
 from utils.admin_check import is_admin
+from utils.yandex_disk_client import disk_client  # ✅ ИМПОРТ СНАЧАЛА!
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -23,11 +24,10 @@ async def group_safety_block_from_disk(message: types.Message):
     if message.chat.id != GROUP_ID and message.chat.type != "private":
         return
     
-    try:
-        from utils.yandex_disk_client import disk_client
-    except ImportError:
-        logger.error("❌ Модуль Yandex Disk не подключен!")
-        await message.answer("❌ Ошибка модуля. Обратитесь к администратору.")
+    # ✅ Проверяем что клиент инициализирован
+    if disk_client is None:
+        logger.error("❌ Yandex Disk клиент не инициализирован! Проверьте токен.")
+        await message.answer("❌ Ошибка подключения к хранилищу файлов.")
         return
     
     # Извлекаем номер блока
@@ -174,9 +174,8 @@ async def handle_group_help(message: types.Message):
 async def group_safety_blocks_list(message: types.Message):
     """Показать список всех блоков из Yandex Disk"""
     
-    try:
-        from utils.yandex_disk_client import disk_client
-    except ImportError:
+    # Проверяем что клиент инициализирован
+    if disk_client is None:
         await message.answer("❌ Модуль Yandex Disk не подключен.")
         return
     
@@ -225,9 +224,8 @@ async def group_safety_blocks_list(message: types.Message):
 async def group_block_file_callback(callback: types.CallbackQuery):
     """Отправить файл блока из Yandex Disk по кнопке"""
     
-    try:
-        from utils.yandex_disk_client import disk_client
-    except ImportError:
+    # Проверяем что клиент инициализирован
+    if disk_client is None:
         await callback.answer("❌ Ошибка модуля", show_alert=True)
         return
     
