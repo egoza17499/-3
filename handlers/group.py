@@ -14,8 +14,7 @@ router = Router()
 # ============================================================
 
 @router.message(
-    F.chat.type.in_({"group", "supergroup"}),
-    F.text.regexp(re.compile(r'^(блок\s*№?\s*\d+)$', re.IGNORECASE))
+    F.text.regexp(re.compile(r'^(блок\s*№?\s*\d+)$', re.IGNORECASE))  # ✅ И ЛС, и группы!
 )
 async def group_safety_block_from_disk(message: types.Message):
     """Показать блок безопасности из Yandex Disk"""
