@@ -16,7 +16,7 @@ router = Router()
 
 @router.message(
     F.text, 
-    ~F.text.regexp(r'^(блок\s*№?\s*\d+)$', re.IGNORECASE)  # ✅ НЕ обрабатывать "блок N"
+    ~F.text.regexp(re.compile(r'^(блок\s*№?\s*\d+)$', re.IGNORECASE))  # ✅ re.compile!
 )
 async def search_handler(message: types.Message):
     """Обработчик поиска пользователей — только в ЛС и только для админов"""
@@ -48,7 +48,7 @@ async def search_handler(message: types.Message):
     
     keyboard = []
     
-    for user in users[:10]:  # Показываем первые 10 результатов
+    for user in users[:10]:
         user_id_db = user[0]
         username_db = user[1] or "N/A"
         fio = user[3] or "Не указано"
