@@ -98,9 +98,8 @@ def setup_routers():
         logger.info("✅ profile зарегистрирован")
         
         dp.include_router(group.router)
-        
-        # ВАЖНО: knowledge ДОЛЖЕН БЫТЬ ДО search!
-        # Иначе search перехватит все текстовые сообщения
+        logger.info("✅ group зарегистрирован")
+       
         dp.include_router(knowledge.router)
         logger.info("✅ knowledge зарегистрирован")
         
