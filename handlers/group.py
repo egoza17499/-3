@@ -1,7 +1,7 @@
 import logging
 import re
 from aiogram import Router, F, types
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, InputFile
 from config import GROUP_ID
 from utils.admin_check import is_admin
 from utils.yandex_disk_client import disk_client
@@ -81,7 +81,7 @@ async def group_safety_block_from_disk(message: types.Message):
         )
         return
     
-    # 🔥 СКАЧИВАЕМ ФАЙЛ В ПАМЯТЬ (вместо получения ссылки!)
+    # 🔥 СКАЧИВАЕМ ФАЙЛ В ПАМЯТЬ
     file_content = disk_client.download_file(file_info['name'])
     
     if not file_content:
@@ -92,9 +92,9 @@ async def group_safety_block_from_disk(message: types.Message):
     file_size = file_info['size']
     size_str = f"{file_size / 1024:.1f} KB" if file_size < 1024*1024 else f"{file_size / (1024*1024):.1f} MB"
     
-    # 🔥 ОТПРАВЛЯЕМ ФАЙЛ ИЗ ПАМЯТИ (bytes)
+    # 🔥 ОТПРАВЛЯЕМ ФАЙЛ ЧЕРЕЗ InputFile
     await message.answer_document(
-        document=file_content,  # ✅ bytes, а не URL!
+        document=InputFile(file_content, filename=file_info['name']),  # ✅ InputFile!
         caption=f"🛡 <b>Блок безопасности №{block_number}</b>\n\n"
                 f"📄 {file_info['name']}\n"
                 f"📏 {size_str}\n\n"
@@ -269,9 +269,9 @@ async def group_block_file_callback(callback: types.CallbackQuery):
             await callback.answer("❌ Ошибка при скачивании файла", show_alert=True)
             return
         
-        # 🔥 ОТПРАВЛЯЕМ ФАЙЛ ИЗ ПАМЯТИ
+        # 🔥 ОТПРАВЛЯЕМ ФАЙЛ ЧЕРЕЗ InputFile
         await callback.message.answer_document(
-            document=file_content,  # ✅ bytes, а не URL!
+            document=InputFile(file_content, filename=file_info['name']),  # ✅ InputFile!
             caption=f"🛡 <b>Блок безопасности №{block_number}</b>\n\n"
                     f"📄 {file_info['name']}\n\n"
                     f"💡 <i>Сохраните!</i>",
