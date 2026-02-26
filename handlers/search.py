@@ -1,30 +1,41 @@
+import logging
+import re
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from db_manager import db
 from utils.admin_check import admin_required_message, is_admin
-import logging
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-# ... (остальной код) ...
+# ============================================================
+# ОБРАБОТЧИК ПОИСКА
+# ============================================================
 
 @router.message(F.text)
 async def search_handler(message: types.Message):
-    """Обработчик поиска - ТЕПЕРЬ С ПРОВЕРКОЙ АДМИНА"""
+    """Обработчик поиска — с исключением для блоков безопасности"""
+    
     search_text = message.text.strip()
+    
+    # ❌ ИГНОРИРУЕМ команды для блоков безопасности
+    # Чтобы они обрабатывались в group.py
+    if re.match(r'^(блок\s*№?\s*\d+)$', search_text, re.IGNORECASE):
+        logger.info(f"⏭️ Пропускаем команду блока в search: '{search_text}'")
+        return
     
     # Проверяем, админ ли это
     user_id = message.from_user.id
     username = message.from_user.username
     
     if not await is_admin(user_id, username):
-        # Если не админ - игнорируем поиск по пользователям
-        # Можно отправить подсказку или просто проигнорировать
+        # Если не админ — игнорируем поиск по пользователям
+        logger.info(f"⏭️ Пропускаем (не админ): '{search_text}'")
         return
     
     # Поиск пользователей (только для админов)
+    logger.info(f"🔍 Поиск пользователя: '{search_text}'")
     users = db.search_users(search_text)
     
     if not users:
@@ -52,7 +63,7 @@ async def search_handler(message: types.Message):
     
     keyboard.append([InlineKeyboardButton(
         text="🔙 Назад",
-        callback_data="admin_functions"
+        callback_data="admin_functions_back"
     )])
     
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
