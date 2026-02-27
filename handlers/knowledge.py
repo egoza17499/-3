@@ -16,6 +16,35 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 # ============================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================================
+
+def format_phone_link(display_name, phone_number):
+    """
+    Создает HTML-ссылку tel: для кликабельного номера телефона
+    
+    Args:
+        display_name: Как будет отображаться (например "АДП")
+        phone_number: Номер телефона (например "8-493-237-62-64")
+    
+    Returns:
+        HTML строка с ссылкой: <a href="tel:+74932376264">8-493-237-62-64</a>
+    """
+    if not phone_number:
+        return phone_number
+    
+    # Убираем всё кроме цифр и +
+    clean_number = re.sub(r'[^\d+]', '', phone_number)
+    
+    # Добавляем +7 если номер начинается с 8
+    if clean_number.startswith('8'):
+        clean_number = '+7' + clean_number[1:]
+    elif clean_number.startswith('7'):
+        clean_number = '+' + clean_number
+    
+    return f"<a href='tel:{clean_number}'>{phone_number}</a>"
+
+# ============================================================
 # ИНФОРМАЦИЯ
 # ============================================================
 
@@ -120,13 +149,17 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
         text += f"\n✈️ Аэродром: {airport}"
     text += f"\n🏠 Жилье: {housing}\n\n"
     
-    # Телефоны
+    # Телефоны с кликабельными ссылками 🔥
     phones = get_aerodrome_phones(aerodrome['id'])
     if phones:
-        text += "📞 Полезные номера телефонов:\n"
+        text += "📞 <b>Полезные номера телефонов:</b>\n\n"
         for phone in phones:
-            text += f"• {phone['phone_name']}: {phone['phone_number']}\n"
-        text += "\n"
+            phone_name = phone['phone_name']
+            phone_number = phone['phone_number']
+            # Создаем кликабельную ссылку
+            clickable_phone = format_phone_link(phone_name, phone_number)
+            text += f"• {phone_name}: {clickable_phone}\n"
+        text += "\n<i>📱 Нажмите на номер чтобы позвонить</i>\n\n"
     
     # Документы
     documents = get_aerodrome_documents(aerodrome['id'])
