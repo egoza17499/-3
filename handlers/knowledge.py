@@ -19,10 +19,15 @@ router = Router()
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ============================================================
 
-def format_phone_link(display_name, phone_number):
+def format_phone_link(phone_number):
     """
-    Создает кликабельный номер (упрощённый формат)
-    Telegram автоматически делает ссылки на номера телефонов кликабельными
+    Создает HTML-ссылку tel: для кликабельного номера телефона
+    
+    Args:
+        phone_number: Номер телефона (например "8-493-237-62-64")
+    
+    Returns:
+        HTML строка с ссылкой: <a href="tel:+74932376264">8-493-237-62-64</a>
     """
     if not phone_number:
         return phone_number
@@ -36,8 +41,8 @@ def format_phone_link(display_name, phone_number):
     elif clean_number.startswith('7'):
         clean_number = '+' + clean_number
     
-    # Возвращаем как есть - Telegram сам сделает ссылку
-    return f"{phone_number}"
+    # Возвращаем HTML-ссылку
+    return f"<a href='tel:{clean_number}'>{phone_number}</a>"
 
 # ============================================================
 # ИНФОРМАЦИЯ
@@ -151,9 +156,9 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
         for phone in phones:
             phone_name = phone['phone_name']
             phone_number = phone['phone_number']
-            # Форматируем номер (Telegram сам сделает ссылку)
-            formatted_phone = format_phone_link(phone_name, phone_number)
-            text += f"• {phone_name}: {formatted_phone}\n"
+            # Создаем кликабельную ссылку
+            clickable_phone = format_phone_link(phone_number)
+            text += f"• {phone_name}: {clickable_phone}\n"
         text += "\n<i>📱 Нажмите на номер чтобы позвонить</i>\n\n"
     
     # Документы
