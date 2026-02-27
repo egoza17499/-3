@@ -71,16 +71,18 @@ def setup_routers():
     logger.info("🔍 Начинаем регистрацию handlers...")
     
     try:
-        from handlers import welcome
-        from handlers import registration
-        from handlers import menu
-        from handlers import profile
+        # Импортируем роутеры в правильном порядке
+        from handlers import welcome      # 1. Приветствие (/start)
+        from handlers import registration # 2. Регистрация
+        from handlers import menu         # 3. Главное меню
+        from handlers import profile      # 4. Профиль
         from handlers import group
-        from handlers import knowledge
-        from handlers import edit_aerodrome
-        from handlers import admin
-        from handlers import search
+        from handlers import knowledge    # 5. Поиск аэродромов (ДО search!)
+        from handlers import edit_aerodrome # 6. Редактирование аэродромов
+        from handlers import admin        # 7. Админ функции        
+        from handlers import search       # 8. Поиск пользователей (только админ)
         
+        # Регистрируем роутеры (порядок важен!)
         dp.include_router(welcome.router)
         logger.info("✅ welcome зарегистрирован")
         
@@ -131,54 +133,25 @@ async def main():
     setup_routers()
     
     # ========================================================================
-    # 🔥 ВРЕМЕННЫЙ КОД - ВЫПОЛНЕНИЕ SQL С КЛИКАБЕЛЬНЫМИ НОМЕРАМИ
+    # 🔥 ОБНОВЛЕНИЕ БАЗЫ ДАННЫХ - ЖИЛЬЕ АЭРОДРОМОВ (выполнится ОДИН РАЗ)
     # ========================================================================
     try:
         logger.info("="*70)
-        logger.info("🔄 ВЫПОЛНЯЮ SQL С КЛИКАБЕЛЬНЫМИ НОМЕРАМИ ТЕЛЕФОНОВ...")
-        logger.info("📄 Файл: complete_aerodromes_clickable.sql")
+        logger.info("🔄 НАЧИНАЮ ОБНОВЛЕНИЕ ИНФОРМАЦИИ О ЖИЛЬЕ...")
+        logger.info("📋 На основе Приказа №600 от 31.08.2025")
         logger.info("="*70)
         
-        import psycopg2
-        
-        # Читаем SQL файл
-        with open('complete_aerodromes_clickable.sql', 'r', encoding='utf-8') as f:
-            sql_script = f.read()
-        
-        logger.info("📄 SQL файл прочитан")
-        
-        # Подключаемся к БД
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        
-        logger.info("🔌 Подключение к базе данных...")
-        
-        # Выполняем SQL
-        cursor.execute(sql_script)
-        conn.commit()
-        
-        # Проверяем результат
-        cursor.execute("SELECT COUNT(*) FROM aerodromes")
-        aerodromes_count = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM aerodrome_phones")
-        phones_count = cursor.fetchone()[0]
-        
-        cursor.close()
-        conn.close()
+        from update_aerodromes_housing import update_all_aerodromes
+        updated_count = update_all_aerodromes()
         
         logger.info("="*70)
-        logger.info("✅ SQL ВЫПОЛНЕН УСПЕШНО!")
-        logger.info("="*70)
-        logger.info(f"📊 Аэродромов: {aerodromes_count}")
-        logger.info(f"📱 Телефонов: {phones_count}")
-        logger.info("📞 Все номера теперь кликабельные!")
+        logger.info(f"✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО! Обновлено: {updated_count} аэродромов")
         logger.info("="*70)
         
-    except FileNotFoundError:
-        logger.warning("⚠️  Файл complete_aerodromes_clickable.sql не найден - пропускаю")
+    except ImportError:
+        logger.warning("⚠️  Модуль update_aerodromes_housing не найден - пропускаю обновление")
     except Exception as e:
-        logger.error(f"❌ Ошибка при выполнении SQL: {e}")
+        logger.error(f"❌ Ошибка при обновлении жилья: {e}")
         logger.info("⚠️  Продолжаю запуск бота несмотря на ошибку...")
     # ========================================================================
     
@@ -186,7 +159,7 @@ async def main():
     instance_id = f"instance_{os.getpid()}_{int(time.time())}"
     logger.info(f"🤖 Запуск экземпляра: {instance_id}")
     
-    # Проверка блокировки
+    # Проверка блокировки (для предотвращения дублирования ботов)
     lock_status = db.check_lock_status()
     if lock_status:
         logger.info(f"📊 Текущая блокировка: {lock_status['instance_id']}")
@@ -199,11 +172,11 @@ async def main():
     logger.info("✅ Блокировка успешно захвачена!")
     
     try:
-        # Запуск HTTP сервера для health check
+        # Запуск HTTP сервера для health check (Render)
         logger.info("🌐 Запуск HTTP сервера для health check...")
         health_runner = await start_health_server(port=8080)
         
-        # Очистка webhook
+        # Очистка webhook (переключаемся на polling)
         logger.info("🔄 Очистка webhook...")
         for attempt in range(3):
             try:
@@ -217,9 +190,10 @@ async def main():
         else:
             logger.error("❌ Не удалось удалить webhook после 3 попыток")
         
+        # Небольшая пауза перед стартом polling
         await asyncio.sleep(5)
         
-        # Heartbeat task
+        # Задача heartbeat для обновления блокировки
         async def heartbeat_task():
             while True:
                 try:
@@ -231,11 +205,14 @@ async def main():
         
         heartbeat_future = asyncio.create_task(heartbeat_task())
         
+        # Разрешённые типы обновлений (оптимизация)
         allowed_updates = dp.resolve_used_update_types()
         logger.info(f"✅ Запускаем polling... (allowed_updates: {allowed_updates})")
         
+        # Запуск polling
         await dp.start_polling(bot, allowed_updates=allowed_updates)
         
+        # Остановка heartbeat
         heartbeat_future.cancel()
         await health_runner.cleanup()
         
@@ -247,15 +224,25 @@ async def main():
     finally:
         logger.info("🛑 Остановка бота...")
         try:
+            # Освобождаем блокировку
             db.release_lock(instance_id)
             logger.info("🔓 Блокировка освобождена")
+            
+            # Закрываем сессию бота
             await bot.session.close()
             logger.info("🔌 Сессия бота закрыта")
+            
+            # Закрываем соединение с БД
             db.close()
             logger.info("🔌 PostgreSQL отключена")
+            
             logger.info("✅ Бот полностью остановлен")
         except Exception as e:
             logger.error(f"❌ Ошибка при остановке: {e}", exc_info=True)
+
+# ============================================================================
+# ЗАПУСК
+# ============================================================================
 
 if __name__ == "__main__":
     try:
