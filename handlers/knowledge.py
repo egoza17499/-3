@@ -3,6 +3,7 @@ import re
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import BufferedInputFile
 from db_manager import (
     get_aerodromes_by_city,
     get_aerodrome_by_id,
@@ -11,6 +12,8 @@ from db_manager import (
     get_safety_block_by_number
 )
 from states import KnowledgeState
+from utils.yandex_disk_client import YandexDiskClient
+from config import YANDEX_DISK_TOKEN
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -18,7 +21,22 @@ router = Router()
 # ============================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ============================================================
-# Функция удалена, так как номера в базе уже содержат HTML-ссылки
+
+def format_phone_link(phone_number):
+    """
+    Создает HTML-ссылку tel: для кликабельного номера телефона
+    """
+    if not phone_number:
+        return phone_number
+    
+    clean_number = re.sub(r'[^\d+]', '', phone_number)
+    
+    if clean_number.startswith('8'):
+        clean_number = '+7' + clean_number[1:]
+    elif clean_number.startswith('7'):
+        clean_number = '+' + clean_number
+    
+    return f"<a href='tel:{clean_number}'>{phone_number}</a>"
 
 # ============================================================
 # ИНФОРМАЦИЯ
@@ -52,14 +70,12 @@ async def aerodrome_search_handler(message: types.Message):
     
     search_text = message.text.strip()
     
-    # ❌ ИГНОРИРУЕМ команды для блоков безопасности
     if re.match(r'^(блок\s*№?\s*\d+)$', search_text, re.IGNORECASE):
         logger.info(f"⏭️ Пропускаем команду блока: '{search_text}'")
         return
     
     logger.info(f"✈️ Поиск аэродрома: '{search_text}'")
     
-    # Ищем ВСЕ аэродромы в городе
     aerodromes = get_aerodromes_by_city(search_text)
     
     if not aerodromes:
@@ -72,12 +88,10 @@ async def aerodrome_search_handler(message: types.Message):
     
     logger.info(f"✅ Найдено аэродромов: {len(aerodromes)}")
     
-    # Если найден только один аэродром - показываем его сразу
     if len(aerodromes) == 1:
         await show_aerodrome_details(message, aerodromes[0])
         return
     
-    # Если несколько аэродромов - показываем список с выбором
     await show_aerodrome_selection(message, aerodromes, search_text)
 
 async def show_aerodrome_selection(message: types.Message, aerodromes: list, search_text: str):
@@ -119,18 +133,16 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
         text += f"\n✈️ Аэродром: {airport}"
     text += f"\n🏠 Жилье: {housing}\n\n"
     
-    # 🔥 ТЕЛЕФОНЫ (выводим как есть, в базе уже HTML-ссылки)
     phones = get_aerodrome_phones(aerodrome['id'])
     if phones:
         text += "📞 <b>Полезные номера телефонов:</b>\n\n"
         for phone in phones:
             phone_name = phone['phone_name']
             phone_number = phone['phone_number']
-            # Выводим номер как есть - там уже ссылка <a href="tel:...">
-            text += f"• {phone_name}: {phone_number}\n"
+            clickable_phone = format_phone_link(phone_number)
+            text += f"• {phone_name}: {clickable_phone}\n"
         text += "\n<i>📱 Нажмите на номер чтобы позвонить</i>\n\n"
     
-    # Документы
     documents = get_aerodrome_documents(aerodrome['id'])
     
     keyboard_buttons = []
@@ -201,6 +213,124 @@ async def aerodrome_documents_show(callback: types.CallbackQuery):
     await callback.answer()
 
 # ============================================================
+# ЗНАНИЯ О САМОЛЕТЕ — ИЗМЕНЕНО!
+# ============================================================
+
+@router.callback_query(F.data == "info_aircraft")
+async def info_aircraft(callback: types.CallbackQuery):
+    """Показываем кнопки с модификациями самолета"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✈️ Ил-76МД", callback_data="aircraft_il76md")],
+        [InlineKeyboardButton(text="✈️ Ил-76МД-М", callback_data="aircraft_il76mdm")],
+        [InlineKeyboardButton(text="✈️ Ил-76МД-90А", callback_data="aircraft_il76md90a")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="info_back")]
+    ])
+    
+    await callback.message.edit_text(
+        "✈️ Полезные сведения о самолете\n\n"
+        "Выберите модификацию:",
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "aircraft_il76md")
+async def aircraft_il76md_files(callback: types.CallbackQuery):
+    """Показываем файлы для Ил-76МД"""
+    await show_yandex_files(callback, "Il-76MD", "Ил-76МД")
+
+@router.callback_query(F.data == "aircraft_il76mdm")
+async def aircraft_il76mdm_files(callback: types.CallbackQuery):
+    """Показываем файлы для Ил-76МД-М"""
+    await show_yandex_files(callback, "Il-76MD-M", "Ил-76МД-М")
+
+@router.callback_query(F.data == "aircraft_il76md90a")
+async def aircraft_il76md90a_files(callback: types.CallbackQuery):
+    """Показываем файлы для Ил-76МД-90А"""
+    await show_yandex_files(callback, "Il-76MD-90A", "Ил-76МД-90А")
+
+async def show_yandex_files(callback: types.CallbackQuery, folder_path: str, aircraft_name: str):
+    """Показываем список файлов из Яндекс Диска (ПАПКИ В КОРНЕ!)"""
+    try:
+        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+        
+        # Получаем список файлов из папки В КОРНЕ диска
+        files = await disk_client.list_files(f"/{folder_path}")
+        
+        if not files:
+            await callback.answer(f"📁 В папке {aircraft_name} пока нет файлов", show_alert=True)
+            return
+        
+        keyboard_buttons = []
+        for file_info in files:
+            file_name = file_info.get('name', 'Без названия')
+            file_path = file_info.get('path', '')
+            
+            keyboard_buttons.append([InlineKeyboardButton(
+                text=f"📄 {file_name}",
+                callback_data=f"download_file_{folder_path}___{file_name}"
+            )])
+        
+        keyboard_buttons.append([InlineKeyboardButton(
+            text="🔙 Назад к самолетам",
+            callback_data="info_aircraft"
+        )])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        
+        await callback.message.edit_text(
+            f"✈️ <b>{aircraft_name}</b>\n\n"
+            f"📁 Доступные файлы:\n\n"
+            f"Нажмите на файл для скачивания:",
+            reply_markup=keyboard
+        )
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка файлов: {e}")
+        await callback.answer("❌ Ошибка при получении списка файлов", show_alert=True)
+
+@router.callback_query(F.data.startswith("download_file_"))
+async def download_file_handler(callback: types.CallbackQuery):
+    """Скачиваем и отправляем файл"""
+    try:
+        data = callback.data.replace("download_file_", "")
+        folder_path, file_name = data.split("___")
+        
+        # ПУТЬ В КОРНЕ ДИСКА (не в /Blocks/!)
+        full_path = f"/{folder_path}/{file_name}"
+        
+        await callback.answer("⏳ Загрузка файла...", show_alert=False)
+        
+        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+        file_content = await disk_client.download_file(full_path)
+        
+        if file_name.endswith('.pdf'):
+            media_type = 'document'
+        elif file_name.endswith(('.jpg', '.jpeg', '.png', '.gif')):
+            media_type = 'photo'
+        else:
+            media_type = 'document'
+        
+        file_buffer = BufferedInputFile(file_content, filename=file_name)
+        
+        if media_type == 'photo':
+            await callback.message.answer_photo(
+                photo=file_buffer,
+                caption=f"📄 {file_name}"
+            )
+        else:
+            await callback.message.answer_document(
+                document=file_buffer,
+                caption=f"📄 {file_name}"
+            )
+        
+        await callback.answer("✅ Файл отправлен!")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при скачивании файла: {e}")
+        await callback.answer("❌ Ошибка при скачивании файла", show_alert=True)
+
+# ============================================================
 # БЛОКИ БЕЗОПАСНОСТИ
 # ============================================================
 
@@ -224,18 +354,6 @@ async def safety_block_show(callback: types.CallbackQuery):
     await callback.message.edit_text(
         f"🛡️ Блок безопасности №{block_number}\n\n"
         f"{block['block_text']}"
-    )
-    await callback.answer()
-
-# ============================================================
-# ЗНАНИЯ О САМОЛЕТЕ
-# ============================================================
-
-@router.callback_query(F.data == "info_aircraft")
-async def info_aircraft(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "✈️ Полезные сведения о самолете\n\n"
-        "Выберите тему:"
     )
     await callback.answer()
 
