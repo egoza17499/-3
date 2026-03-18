@@ -1,9 +1,9 @@
 import logging
 import re
+from io import BytesIO
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.types import BufferedInputFile
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile
 from db_manager import (
     get_aerodromes_by_city,
     get_aerodrome_by_id,
@@ -27,6 +27,10 @@ def format_phone_link(phone_number):
     Создает HTML-ссылку tel: для кликабельного номера телефона
     """
     if not phone_number:
+        return phone_number
+    
+    # Если номер уже содержит HTML-ссылку, возвращаем как есть
+    if '<a href' in phone_number:
         return phone_number
     
     clean_number = re.sub(r'[^\d+]', '', phone_number)
@@ -70,6 +74,7 @@ async def aerodrome_search_handler(message: types.Message):
     
     search_text = message.text.strip()
     
+    # ❌ ИГНОРИРУЕМ команды для блоков безопасности
     if re.match(r'^(блок\s*№?\s*\d+)$', search_text, re.IGNORECASE):
         logger.info(f"⏭️ Пропускаем команду блока: '{search_text}'")
         return
@@ -133,6 +138,7 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
         text += f"\n✈️ Аэродром: {airport}"
     text += f"\n🏠 Жилье: {housing}\n\n"
     
+    # Телефоны
     phones = get_aerodrome_phones(aerodrome['id'])
     if phones:
         text += "📞 <b>Полезные номера телефонов:</b>\n\n"
@@ -143,6 +149,7 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
             text += f"• {phone_name}: {clickable_phone}\n"
         text += "\n<i>📱 Нажмите на номер чтобы позвонить</i>\n\n"
     
+    # Документы
     documents = get_aerodrome_documents(aerodrome['id'])
     
     keyboard_buttons = []
@@ -213,7 +220,7 @@ async def aerodrome_documents_show(callback: types.CallbackQuery):
     await callback.answer()
 
 # ============================================================
-# ЗНАНИЯ О САМОЛЕТЕ — ИЗМЕНЕНО!
+# ЗНАНИЯ О САМОЛЕТЕ — С ФАЙЛАМИ С ЯНДЕКС ДИСКА
 # ============================================================
 
 @router.callback_query(F.data == "info_aircraft")
@@ -236,24 +243,24 @@ async def info_aircraft(callback: types.CallbackQuery):
 @router.callback_query(F.data == "aircraft_il76md")
 async def aircraft_il76md_files(callback: types.CallbackQuery):
     """Показываем файлы для Ил-76МД"""
-    await show_yandex_files(callback, "Il-76MD", "Ил-76МД")
+    await show_yandex_files(callback, "IL-76MD", "Ил-76МД")
 
 @router.callback_query(F.data == "aircraft_il76mdm")
 async def aircraft_il76mdm_files(callback: types.CallbackQuery):
     """Показываем файлы для Ил-76МД-М"""
-    await show_yandex_files(callback, "Il-76MD-M", "Ил-76МД-М")
+    await show_yandex_files(callback, "IL-76MD-M", "Ил-76МД-М")
 
 @router.callback_query(F.data == "aircraft_il76md90a")
 async def aircraft_il76md90a_files(callback: types.CallbackQuery):
     """Показываем файлы для Ил-76МД-90А"""
-    await show_yandex_files(callback, "Il-76MD-90A", "Ил-76МД-90А")
+    await show_yandex_files(callback, "IL-76MD-90A", "Ил-76МД-90А")
 
 async def show_yandex_files(callback: types.CallbackQuery, folder_path: str, aircraft_name: str):
-    """Показываем список файлов из Яндекс Диска (ПАПКИ В КОРНЕ!)"""
+    """Показываем список файлов из Яндекс Диска"""
     try:
         disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
         
-        # Получаем список файлов из папки В КОРНЕ диска
+        # Получаем список файлов из папки (в корне диска)
         files = await disk_client.list_files(f"/{folder_path}")
         
         if not files:
@@ -261,13 +268,17 @@ async def show_yandex_files(callback: types.CallbackQuery, folder_path: str, air
             return
         
         keyboard_buttons = []
-        for file_info in files:
+        for idx, file_info in enumerate(files):
             file_name = file_info.get('name', 'Без названия')
-            file_path = file_info.get('path', '')
+            # Используем короткий ID вместо полного имени
+            file_id = f"{folder_path}_{idx}"
+            
+            # Обрезаем длинные имена файлов
+            display_name = file_name[:30] + '...' if len(file_name) > 30 else file_name
             
             keyboard_buttons.append([InlineKeyboardButton(
-                text=f"📄 {file_name}",
-                callback_data=f"download_file_{folder_path}___{file_name}"
+                text=f"📄 {display_name}",
+                callback_data=f"dl_{file_id}"
             )])
         
         keyboard_buttons.append([InlineKeyboardButton(
@@ -279,7 +290,7 @@ async def show_yandex_files(callback: types.CallbackQuery, folder_path: str, air
         
         await callback.message.edit_text(
             f"✈️ <b>{aircraft_name}</b>\n\n"
-            f"📁 Доступные файлы:\n\n"
+            f"📁 Доступные файлы: {len(files)}\n\n"
             f"Нажмите на файл для скачивания:",
             reply_markup=keyboard
         )
@@ -289,31 +300,41 @@ async def show_yandex_files(callback: types.CallbackQuery, folder_path: str, air
         logger.error(f"Ошибка при получении списка файлов: {e}")
         await callback.answer("❌ Ошибка при получении списка файлов", show_alert=True)
 
-@router.callback_query(F.data.startswith("download_file_"))
+@router.callback_query(F.data.startswith("dl_"))
 async def download_file_handler(callback: types.CallbackQuery):
     """Скачиваем и отправляем файл"""
     try:
-        data = callback.data.replace("download_file_", "")
-        folder_path, file_name = data.split("___")
+        # Извлекаем ID файла
+        file_id = callback.data.replace("dl_", "")
+        folder_path, idx = file_id.rsplit("_", 1)
+        idx = int(idx)
         
-        # ПУТЬ В КОРНЕ ДИСКА (не в /Blocks/!)
-        full_path = f"/{folder_path}/{file_name}"
+        # Получаем список файлов снова
+        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+        files = await disk_client.list_files(f"/{folder_path}")
+        
+        if idx >= len(files):
+            await callback.answer("❌ Файл не найден", show_alert=True)
+            return
+        
+        file_info = files[idx]
+        file_name = file_info.get('name')
+        full_path = file_info.get('path')
         
         await callback.answer("⏳ Загрузка файла...", show_alert=False)
         
-        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+        # Скачиваем файл
         file_content = await disk_client.download_file(full_path)
         
-        if file_name.endswith('.pdf'):
-            media_type = 'document'
-        elif file_name.endswith(('.jpg', '.jpeg', '.png', '.gif')):
-            media_type = 'photo'
-        else:
-            media_type = 'document'
+        if not file_content:
+            await callback.answer("❌ Ошибка скачивания файла", show_alert=True)
+            return
         
+        # Отправляем файл
         file_buffer = BufferedInputFile(file_content, filename=file_name)
         
-        if media_type == 'photo':
+        # Определяем тип файла
+        if file_name.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
             await callback.message.answer_photo(
                 photo=file_buffer,
                 caption=f"📄 {file_name}"
