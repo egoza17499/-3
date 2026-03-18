@@ -138,15 +138,15 @@ async def show_aerodrome_details(message: types.Message, aerodrome: dict):
         text += f"\n✈️ Аэродром: {airport}"
     text += f"\n🏠 Жилье: {housing}\n\n"
     
-    # Телефоны
+    # Телефоны (в базе уже HTML-ссылки)
     phones = get_aerodrome_phones(aerodrome['id'])
     if phones:
         text += "📞 <b>Полезные номера телефонов:</b>\n\n"
         for phone in phones:
             phone_name = phone['phone_name']
             phone_number = phone['phone_number']
-            clickable_phone = format_phone_link(phone_number)
-            text += f"• {phone_name}: {clickable_phone}\n"
+            # Выводим как есть - в базе уже HTML-ссылки
+            text += f"• {phone_name}: {phone_number}\n"
         text += "\n<i>📱 Нажмите на номер чтобы позвонить</i>\n\n"
     
     # Документы
@@ -220,7 +220,7 @@ async def aerodrome_documents_show(callback: types.CallbackQuery):
     await callback.answer()
 
 # ============================================================
-# ЗНАНИЯ О САМОЛЕТЕ — С ФАЙЛАМИ С ЯНДЕКС ДИСКА
+# ЗНАНИЯ О САМОЛЕТЕ — С ПРАВИЛЬНЫМИ НАЗВАНИЯМИ ПАПОК
 # ============================================================
 
 @router.callback_query(F.data == "info_aircraft")
@@ -243,17 +243,17 @@ async def info_aircraft(callback: types.CallbackQuery):
 @router.callback_query(F.data == "aircraft_il76md")
 async def aircraft_il76md_files(callback: types.CallbackQuery):
     """Показываем файлы для Ил-76МД"""
-    await show_yandex_files(callback, "IL-76MD", "Ил-76МД")
+    await show_yandex_files(callback, "Il-76MD", "Ил-76МД")
 
 @router.callback_query(F.data == "aircraft_il76mdm")
 async def aircraft_il76mdm_files(callback: types.CallbackQuery):
     """Показываем файлы для Ил-76МД-М"""
-    await show_yandex_files(callback, "IL-76MD-M", "Ил-76МД-М")
+    await show_yandex_files(callback, "Il-76MD-M", "Ил-76МД-М")
 
 @router.callback_query(F.data == "aircraft_il76md90a")
 async def aircraft_il76md90a_files(callback: types.CallbackQuery):
     """Показываем файлы для Ил-76МД-90А"""
-    await show_yandex_files(callback, "IL-76MD-90A", "Ил-76МД-90А")
+    await show_yandex_files(callback, "Il-76MD-90A", "Ил-76МД-90А")
 
 async def show_yandex_files(callback: types.CallbackQuery, folder_path: str, aircraft_name: str):
     """Показываем список файлов из Яндекс Диска"""
