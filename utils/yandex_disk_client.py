@@ -7,13 +7,18 @@ logger = logging.getLogger(__name__)
 class YandexDiskClient:
     def __init__(self, token):
         self.token = token
+        # ✅ ИСПРАВЛЕНО: убраны пробелы в конце URL
         self.base_url = "https://cloud-api.yandex.net/v1/disk"
         self.headers = {"Authorization": f"OAuth {token}"}
     
     def get_file_link(self, file_path):
         """Получить ссылку для скачивания файла"""
         try:
-            full_path = f"{YANDEX_DISK_FOLDER}/{file_path}"
+            # Если путь уже начинается с /, не добавляем папку
+            if file_path.startswith('/'):
+                full_path = file_path
+            else:
+                full_path = f"{YANDEX_DISK_FOLDER}/{file_path}"
             
             response = requests.get(
                 f"{self.base_url}/resources/download",
@@ -29,7 +34,7 @@ class YandexDiskClient:
                     logger.info(f"✅ Получена ссылка на файл: {file_path}")
                     return direct_link
             
-            logger.error(f"❌ Не удалось получить ссылку на файл: {file_path}")
+            logger.error(f"❌ Не удалось получить ссылку на файл: {file_path} (status: {response.status_code})")
             return None
                 
         except requests.exceptions.Timeout:
@@ -73,14 +78,17 @@ class YandexDiskClient:
             logger.error(f"❌ Неизвестная ошибка при скачивании: {e}")
             return None
     
-    def list_files(self):
+    def list_files(self, folder_path=None):
         """Получить список файлов в папке"""
         try:
+            # Если не указана папка, используем корневую
+            path = folder_path if folder_path else YANDEX_DISK_FOLDER
+            
             response = requests.get(
                 f"{self.base_url}/resources",
                 headers=self.headers,
                 params={
-                    "path": YANDEX_DISK_FOLDER,
+                    "path": path,
                     "limit": 100
                 },
                 timeout=10
@@ -96,7 +104,7 @@ class YandexDiskClient:
                             'path': item['path'],
                             'size': item.get('size', 0)
                         })
-                logger.info(f"📁 Найдено файлов: {len(files)}")
+                logger.info(f"📁 Найдено файлов в {path}: {len(files)}")
                 return files
             else:
                 logger.error(f"❌ Ошибка получения списка файлов ({response.status_code}): {response.text}")
