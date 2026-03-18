@@ -7,18 +7,24 @@ logger = logging.getLogger(__name__)
 class YandexDiskClient:
     def __init__(self, token):
         self.token = token
-        # ✅ ИСПРАВЛЕНО: убраны пробелы в конце URL
         self.base_url = "https://cloud-api.yandex.net/v1/disk"
         self.headers = {"Authorization": f"OAuth {token}"}
+    
+    def _get_full_path(self, path: str) -> str:
+        """
+        Возвращает полный путь с учётом YANDEX_DISK_FOLDER.
+        Если путь начинается с /Il-76 или /Blocks — используем как есть.
+        """
+        # Если путь уже абсолютный (папка самолета или Blocks) — не добавляем префикс
+        if path.startswith(('/Il-76', '/Blocks', '/')):
+            return path
+        # Иначе добавляем базовую папку
+        return f"{YANDEX_DISK_FOLDER}/{path}".replace('//', '/')
     
     def get_file_link(self, file_path):
         """Получить ссылку для скачивания файла"""
         try:
-            # Если путь уже начинается с /, не добавляем папку
-            if file_path.startswith('/'):
-                full_path = file_path
-            else:
-                full_path = f"{YANDEX_DISK_FOLDER}/{file_path}"
+            full_path = self._get_full_path(file_path)
             
             response = requests.get(
                 f"{self.base_url}/resources/download",
@@ -34,63 +40,38 @@ class YandexDiskClient:
                     logger.info(f"✅ Получена ссылка на файл: {file_path}")
                     return direct_link
             
-            logger.error(f"❌ Не удалось получить ссылку на файл: {file_path} (status: {response.status_code})")
+            logger.error(f"❌ Не удалось получить ссылку: {file_path} (status: {response.status_code})")
             return None
                 
-        except requests.exceptions.Timeout:
-            logger.error(f"❌ Тайм-аут при получении ссылки: {file_path}")
-            return None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Ошибка запроса: {e}")
-            return None
         except Exception as e:
-            logger.error(f"❌ Неизвестная ошибка: {e}")
+            logger.error(f"❌ Ошибка get_file_link: {e}")
             return None
     
     def download_file(self, file_path):
         """Скачать файл в память (bytes)"""
         try:
-            # Сначала получаем ссылку для скачивания
             download_url = self.get_file_link(file_path)
-            
             if not download_url:
-                logger.error(f"❌ Не удалось получить ссылку для скачивания: {file_path}")
                 return None
             
-            # Скачиваем файл по ссылке
             response = requests.get(download_url, timeout=30)
-            
             if response.status_code == 200:
-                file_size = len(response.content)
-                logger.info(f"✅ Файл скачан: {file_path} ({file_size} байт)")
+                logger.info(f"✅ Файл скачан: {file_path} ({len(response.content)} байт)")
                 return response.content
-            else:
-                logger.error(f"❌ Ошибка скачивания файла ({response.status_code}): {response.text}")
-                return None
-                
-        except requests.exceptions.Timeout:
-            logger.error(f"❌ Тайм-аут при скачивании файла: {file_path}")
-            return None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Ошибка запроса при скачивании: {e}")
             return None
         except Exception as e:
-            logger.error(f"❌ Неизвестная ошибка при скачивании: {e}")
+            logger.error(f"❌ Ошибка download_file: {e}")
             return None
     
     def list_files(self, folder_path=None):
         """Получить список файлов в папке"""
         try:
-            # Если не указана папка, используем корневую
-            path = folder_path if folder_path else YANDEX_DISK_FOLDER
+            path = self._get_full_path(folder_path) if folder_path else YANDEX_DISK_FOLDER
             
             response = requests.get(
                 f"{self.base_url}/resources",
                 headers=self.headers,
-                params={
-                    "path": path,
-                    "limit": 100
-                },
+                params={"path": path, "limit": 100},
                 timeout=10
             )
             
@@ -106,45 +87,13 @@ class YandexDiskClient:
                         })
                 logger.info(f"📁 Найдено файлов в {path}: {len(files)}")
                 return files
-            else:
-                logger.error(f"❌ Ошибка получения списка файлов ({response.status_code}): {response.text}")
-                return []
-                
-        except requests.exceptions.Timeout:
-            logger.error("❌ Тайм-аут при получении списка файлов")
-            return []
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Ошибка запроса списка файлов: {e}")
+            logger.error(f"❌ Ошибка list_files: {response.status_code}")
             return []
         except Exception as e:
-            logger.error(f"❌ Неизвестная ошибка при получении списка: {e}")
+            logger.error(f"❌ Ошибка list_files: {e}")
             return []
-    
-    def file_exists(self, file_name):
-        """Проверить существует ли файл"""
-        try:
-            files = self.list_files()
-            return any(f['name'].lower() == file_name.lower() for f in files)
-        except Exception as e:
-            logger.error(f"❌ Ошибка проверки существования файла: {e}")
-            return False
-    
-    def get_file_info(self, file_name):
-        """Получить информацию о файле"""
-        try:
-            files = self.list_files()
-            for f in files:
-                if f['name'].lower() == file_name.lower():
-                    return f
-            return None
-        except Exception as e:
-            logger.error(f"❌ Ошибка получения информации о файле: {e}")
-            return None
 
-# ============================================================
-# ГЛОБАЛЬНЫЙ КЛИЕНТ (с проверкой токена!)
-# ============================================================
-
+# Глобальный клиент
 if YANDEX_DISK_TOKEN:
     disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
     logger.info("✅ Yandex Disk клиент инициализирован")
