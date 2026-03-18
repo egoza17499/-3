@@ -42,8 +42,8 @@ async def group_safety_block_from_disk(message: types.Message):
     
     logger.info(f"🔍 Запрос блока {block_number} от {username}")
     
-    # 🔥 ИСПРАВЛЕНО: добавлен await
-    files = await disk_client.list_files()
+    # 🔥 ИСПРАВЛЕНО: указываем папку /Blocks
+    files = await disk_client.list_files("/Blocks")
     
     # Пробуем разные форматы и названия
     possible_names = [
@@ -81,8 +81,8 @@ async def group_safety_block_from_disk(message: types.Message):
         )
         return
     
-    # 🔥 ИСПРАВЛЕНО: добавлен await
-    file_content = await disk_client.download_file(file_info['name'])
+    # 🔥 ИСПРАВЛЕНО: используем полный путь из file_info['path']
+    file_content = await disk_client.download_file(file_info['path'])
     
     if not file_content:
         await message.answer("❌ Ошибка при скачивании файла.")
@@ -189,8 +189,8 @@ async def group_safety_blocks_list(message: types.Message):
         await message.answer("❌ Модуль Yandex Disk не подключен.")
         return
     
-    # 🔥 ИСПРАВЛЕНО: добавлен await
-    files = await disk_client.list_files()
+    # 🔥 ИСПРАВЛЕНО: указываем папку /Blocks
+    files = await disk_client.list_files("/Blocks")
     
     if not files:
         await message.answer("❌ На диске нет блоков безопасности.")
@@ -243,8 +243,8 @@ async def group_block_file_callback(callback: types.CallbackQuery):
     try:
         block_number = int(callback.data.split("_")[-1])
         
-        # 🔥 ИСПРАВЛЕНО: добавлен await
-        files = await disk_client.list_files()
+        # 🔥 ИСПРАВЛЕНО: указываем папку /Blocks
+        files = await disk_client.list_files("/Blocks")
         
         possible_names = [
             f"block_{block_number}.docx",
@@ -264,8 +264,8 @@ async def group_block_file_callback(callback: types.CallbackQuery):
             await callback.answer("❌ Файл не найден", show_alert=True)
             return
         
-        # 🔥 ИСПРАВЛЕНО: добавлен await
-        file_content = await disk_client.download_file(file_info['name'])
+        # 🔥 ИСПРАВЛЕНО: используем полный путь из file_info['path']
+        file_content = await disk_client.download_file(file_info['path'])
         
         if not file_content:
             await callback.answer("❌ Ошибка при скачивании файла", show_alert=True)
