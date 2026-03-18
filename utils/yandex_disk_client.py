@@ -10,42 +10,39 @@ class YandexDiskClient:
         self.base_url = "https://cloud-api.yandex.net/v1/disk"
         self.headers = {"Authorization": f"OAuth {token}"}
     
-    def _get_full_path(self, path: str) -> str:
-        """
-        Возвращает полный путь.
-        Если путь начинается с /Il-76 или / — используем как есть (папки в корне).
-        Иначе добавляем YANDEX_DISK_FOLDER.
-        """
-        if path.startswith(('/Il-76', '/')):
-            return path
-        return f"{YANDEX_DISK_FOLDER}/{path}".replace('//', '/')
-    
     async def get_file_link(self, file_path: str):
-        """Получить ссылку для скачивания файла (async)"""
+        """Получить ссылку для скачивания файла"""
         try:
-            full_path = self._get_full_path(file_path)
+            # Убираем "disk:/" если есть и начинаем с /
+            if file_path.startswith("disk:/"):
+                file_path = file_path.replace("disk:/", "/")
+            elif not file_path.startswith("/"):
+                file_path = "/" + file_path
+            
+            logger.info(f"🔗 Запрос ссылки для файла: {file_path}")
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{self.base_url}/resources/download",
                     headers=self.headers,
-                    params={"path": full_path},
+                    params={"path": file_path},
                     timeout=10
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        direct_link = data.get("href")
-                        if direct_link:
-                            logger.info(f"✅ Получена ссылка на файл: {file_path}")
-                            return direct_link
-                    logger.error(f"❌ Не удалось получить ссылку: {file_path} (status: {response.status})")
-                    return None
+                        download_url = data.get("href")
+                        logger.info(f"✅ Получена ссылка для {file_path}")
+                        return download_url
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"❌ Ошибка {response.status}: {error_text} для пути {file_path}")
+                        return None
         except Exception as e:
             logger.error(f"❌ Ошибка get_file_link: {e}")
             return None
     
     async def download_file(self, file_path: str):
-        """Скачать файл в память (async)"""
+        """Скачать файл в память"""
         try:
             download_url = await self.get_file_link(file_path)
             if not download_url:
@@ -57,15 +54,26 @@ class YandexDiskClient:
                         content = await response.read()
                         logger.info(f"✅ Файл скачан: {file_path} ({len(content)} байт)")
                         return content
-            return None
+                    return None
         except Exception as e:
             logger.error(f"❌ Ошибка download_file: {e}")
             return None
     
     async def list_files(self, folder_path: str = None):
-        """Получить список файлов в папке (async)"""
+        """Получить список файлов в папке"""
         try:
-            path = self._get_full_path(folder_path) if folder_path else YANDEX_DISK_FOLDER
+            # Формируем правильный путь
+            if folder_path:
+                if folder_path.startswith("disk:/"):
+                    path = folder_path.replace("disk:/", "/")
+                elif not folder_path.startswith("/"):
+                    path = "/" + folder_path
+                else:
+                    path = folder_path
+            else:
+                path = YANDEX_DISK_FOLDER if YANDEX_DISK_FOLDER else "/"
+            
+            logger.info(f"📁 Запрос списка файлов из: {path}")
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -81,16 +89,19 @@ class YandexDiskClient:
                             if item['type'] != 'directory':
                                 files.append({
                                     'name': item['name'],
-                                    'path': item['path'],
+                                    'path': item['path'],  # Это уже полный путь от API
                                     'size': item.get('size', 0)
                                 })
-                        logger.info(f"📁 Найдено файлов в {path}: {len(files)}")
+                        logger.info(f"✅ Найдено файлов в {path}: {len(files)}")
                         return files
                     else:
-                        logger.error(f"❌ Ошибка list_files: {response.status} — {await response.text()}")
+                        error_text = await response.text()
+                        logger.error(f"❌ Ошибка {response.status} при получении списка: {error_text}")
                         return []
         except Exception as e:
             logger.error(f"❌ Ошибка list_files: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
 
 # Глобальный клиент
