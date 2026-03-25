@@ -11,14 +11,24 @@ logger = logging.getLogger(__name__)
 class Database:
     def __init__(self, db_url):
         try:
+            # 🔥 КЛЮЧЕВОЕ: разбираем URL для Neon.tech (без options параметра)
+            # Neon не поддерживает options='-c statement_timeout=...' в pooled режиме
+            
+            # Убираем параметры которые могут вызвать ошибку
+            clean_url = db_url.split('?')[0]  # Убираем ?sslmode=... если есть проблемы
+            
             self.db_pool = pool.SimpleConnectionPool(
                 1, 10,
-                db_url,
+                clean_url,
                 cursor_factory=RealDictCursor
             )
+            
             if self.db_pool:
                 logger.info("✅ PostgreSQL подключена успешно!")
+            
+            # Создаём таблицы если нет
             self.create_tables()
+            
         except Exception as e:
             logger.error(f"❌ Ошибка подключения к PostgreSQL: {e}")
             raise
@@ -40,10 +50,17 @@ class Database:
                     result = None
                 conn.commit()
                 return result
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"❌ Ошибка выполнения запроса: {e}")
+            raise
         finally:
             self.release_connection(conn)
     
     def create_tables(self):
+        """Создать все таблицы если они не существуют"""
+        
+        # Таблица пользователей
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
@@ -65,6 +82,7 @@ class Database:
             )
         """)
         
+        # Таблица админов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS admins (
                 id SERIAL PRIMARY KEY,
@@ -75,6 +93,7 @@ class Database:
             )
         """)
         
+        # Таблица блокировок инстансов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS instance_lock (
                 id SERIAL PRIMARY KEY,
@@ -84,6 +103,7 @@ class Database:
             )
         """)
         
+        # Таблица аэродромов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS aerodromes (
                 id SERIAL PRIMARY KEY,
@@ -96,6 +116,7 @@ class Database:
             )
         """)
         
+        # Таблица телефонов аэродромов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS aerodrome_phones (
                 id SERIAL PRIMARY KEY,
@@ -106,6 +127,7 @@ class Database:
             )
         """)
         
+        # Таблица документов аэродромов
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS aerodrome_documents (
                 id SERIAL PRIMARY KEY,
@@ -117,6 +139,7 @@ class Database:
             )
         """)
         
+        # Таблица блоков безопасности
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS safety_blocks (
                 id SERIAL PRIMARY KEY,
@@ -127,6 +150,7 @@ class Database:
             )
         """)
         
+        # Таблица знаний о самолётах
         self.execute_query("""
             CREATE TABLE IF NOT EXISTS aircraft_knowledge (
                 id SERIAL PRIMARY KEY,
@@ -139,6 +163,8 @@ class Database:
         """)
         
         logger.info("✅ Все таблицы созданы/обновлены")
+    
+    # ==================== ПОЛЬЗОВАТЕЛИ ====================
     
     def add_user(self, user_id: int, username: str):
         self.execute_query(
@@ -153,6 +179,7 @@ class Database:
         self.execute_query(query, tuple(values))
     
     def get_user(self, user_id: int):
+        """Получить пользователя по telegram_id"""
         result = self.execute_query(
             "SELECT * FROM users WHERE user_id = %s",
             (user_id,),
@@ -160,24 +187,25 @@ class Database:
         )
         if result:
             user = result[0]
-            return (
-                user['user_id'],
-                user['username'],
-                user['registered_at'],
-                user['fio'],
-                user['rank'],
-                user['qualification'],
-                user['leave_start_date'],
-                user['leave_end_date'],
-                user['vlk_date'],
-                user['umo_date'],
-                user['exercise_4_md_m_date'],
-                user['exercise_7_md_m_date'],
-                user['exercise_4_md_90a_date'],
-                user['exercise_7_md_90a_date'],
-                user['parachute_jump_date'],
-                user['is_registered']
-            )
+            # ✅ Возвращаем словарь с безопасным доступом к колонкам
+            return {
+                'user_id': user['user_id'],
+                'username': user.get('username'),
+                'registered_at': user.get('registered_at'),  # ✅ Используем .get() для безопасности
+                'fio': user.get('fio'),
+                'rank': user.get('rank'),
+                'qualification': user.get('qualification'),
+                'leave_start_date': user.get('leave_start_date'),
+                'leave_end_date': user.get('leave_end_date'),
+                'vlk_date': user.get('vlk_date'),
+                'umo_date': user.get('umo_date'),
+                'exercise_4_md_m_date': user.get('exercise_4_md_m_date'),
+                'exercise_7_md_m_date': user.get('exercise_7_md_m_date'),
+                'exercise_4_md_90a_date': user.get('exercise_4_md_90a_date'),
+                'exercise_7_md_90a_date': user.get('exercise_7_md_90a_date'),
+                'parachute_jump_date': user.get('parachute_jump_date'),
+                'is_registered': user.get('is_registered', False)
+            }
         return None
     
     def get_all_users(self):
@@ -185,24 +213,24 @@ class Database:
         if result:
             users = []
             for user in result:
-                users.append((
-                    user['user_id'],
-                    user['username'],
-                    user['registered_at'],
-                    user['fio'],
-                    user['rank'],
-                    user['qualification'],
-                    user['leave_start_date'],
-                    user['leave_end_date'],
-                    user['vlk_date'],
-                    user['umo_date'],
-                    user['exercise_4_md_m_date'],
-                    user['exercise_7_md_m_date'],
-                    user['exercise_4_md_90a_date'],
-                    user['exercise_7_md_90a_date'],
-                    user['parachute_jump_date'],
-                    user['is_registered']
-                ))
+                users.append({
+                    'user_id': user['user_id'],
+                    'username': user.get('username'),
+                    'registered_at': user.get('registered_at'),
+                    'fio': user.get('fio'),
+                    'rank': user.get('rank'),
+                    'qualification': user.get('qualification'),
+                    'leave_start_date': user.get('leave_start_date'),
+                    'leave_end_date': user.get('leave_end_date'),
+                    'vlk_date': user.get('vlk_date'),
+                    'umo_date': user.get('umo_date'),
+                    'exercise_4_md_m_date': user.get('exercise_4_md_m_date'),
+                    'exercise_7_md_m_date': user.get('exercise_7_md_m_date'),
+                    'exercise_4_md_90a_date': user.get('exercise_4_md_90a_date'),
+                    'exercise_7_md_90a_date': user.get('exercise_7_md_90a_date'),
+                    'parachute_jump_date': user.get('parachute_jump_date'),
+                    'is_registered': user.get('is_registered', False)
+                })
             return users
         return []
     
@@ -222,56 +250,34 @@ class Database:
         if result:
             users = []
             for user in result:
-                users.append((
-                    user['user_id'],
-                    user['username'],
-                    user['registered_at'],
-                    user['fio'],
-                    user['rank'],
-                    user['qualification'],
-                    user['leave_start_date'],
-                    user['leave_end_date'],
-                    user['vlk_date'],
-                    user['umo_date'],
-                    user['exercise_4_md_m_date'],
-                    user['exercise_7_md_m_date'],
-                    user['exercise_4_md_90a_date'],
-                    user['exercise_7_md_90a_date'],
-                    user['parachute_jump_date'],
-                    user['is_registered']
-                ))
+                users.append({
+                    'user_id': user['user_id'],
+                    'username': user.get('username'),
+                    'registered_at': user.get('registered_at'),
+                    'fio': user.get('fio'),
+                    'rank': user.get('rank'),
+                    'qualification': user.get('qualification'),
+                    'leave_start_date': user.get('leave_start_date'),
+                    'leave_end_date': user.get('leave_end_date'),
+                    'vlk_date': user.get('vlk_date'),
+                    'umo_date': user.get('umo_date'),
+                    'exercise_4_md_m_date': user.get('exercise_4_md_m_date'),
+                    'exercise_7_md_m_date': user.get('exercise_7_md_m_date'),
+                    'exercise_4_md_90a_date': user.get('exercise_4_md_90a_date'),
+                    'exercise_7_md_90a_date': user.get('exercise_7_md_90a_date'),
+                    'parachute_jump_date': user.get('parachute_jump_date'),
+                    'is_registered': user.get('is_registered', False)
+                })
             return users
         return []
-    
-    def get_users_ready_to_fly(self):
-        all_users = self.get_all_users()
-        ready_users = []
-        
-        for user in all_users:
-            from validators import check_flight_ban
-            bans = check_flight_ban(user)
-            if not bans:
-                ready_users.append(user)
-        
-        return ready_users
-    
-    def get_users_cannot_fly(self):
-        all_users = self.get_all_users()
-        cannot_fly_users = []
-        
-        for user in all_users:
-            from validators import check_flight_ban
-            bans = check_flight_ban(user)
-            if bans:
-                cannot_fly_users.append(user)
-        
-        return cannot_fly_users
     
     def set_registration_complete(self, user_id: int):
         self.execute_query(
             "UPDATE users SET is_registered = TRUE WHERE user_id = %s",
             (user_id,)
         )
+    
+    # ==================== АДМИНЫ ====================
     
     def check_admin_status(self, user_id: int, username: str = None):
         from config import ADMIN_IDS, ADMIN_USERNAMES
@@ -331,6 +337,8 @@ class Database:
         )
         return result[0] if result else None
     
+    # ==================== БЛОКИРОВКИ ИНСТАНСОВ ====================
+    
     def check_lock_status(self):
         result = self.execute_query(
             "SELECT instance_id, heartbeat FROM instance_lock WHERE id = 1",
@@ -374,6 +382,8 @@ class Database:
             "DELETE FROM instance_lock WHERE instance_id = %s AND id = 1",
             (instance_id,)
         )
+    
+    # ==================== АЭРОДРОМЫ ====================
     
     def search_aerodromes(self, keyword: str):
         """Поиск аэродромов по ключевому слову"""
@@ -450,13 +460,6 @@ class Database:
     def delete_aerodrome(self, aerodrome_id: int):
         self.execute_query("DELETE FROM aerodromes WHERE id = %s", (aerodrome_id,))
     
-    def add_aerodrome_phone(self, aerodrome_id: int, phone_name: str, phone_number: str):
-        self.execute_query(
-            """INSERT INTO aerodrome_phones (aerodrome_id, phone_name, phone_number) 
-               VALUES (%s, %s, %s)""",
-            (aerodrome_id, phone_name, phone_number)
-        )
-    
     def get_aerodrome_phones(self, aerodrome_id: int):
         conn = self.get_connection()
         try:
@@ -468,6 +471,13 @@ class Database:
                 return cursor.fetchall()
         finally:
             self.release_connection(conn)
+    
+    def add_aerodrome_phone(self, aerodrome_id: int, phone_name: str, phone_number: str):
+        self.execute_query(
+            """INSERT INTO aerodrome_phones (aerodrome_id, phone_name, phone_number) 
+               VALUES (%s, %s, %s)""",
+            (aerodrome_id, phone_name, phone_number)
+        )
     
     def delete_aerodrome_phone(self, phone_id: int):
         self.execute_query("DELETE FROM aerodrome_phones WHERE id = %s", (phone_id,))
@@ -488,6 +498,8 @@ class Database:
     
     def delete_aerodrome_document(self, doc_id: int):
         self.execute_query("DELETE FROM aerodrome_documents WHERE id = %s", (doc_id,))
+    
+    # ==================== БЛОКИ БЕЗОПАСНОСТИ ====================
     
     def add_safety_block(self, block_number: int, block_text: str, created_by: int):
         self.execute_query(
@@ -516,6 +528,8 @@ class Database:
     def delete_safety_block(self, block_number: int):
         self.execute_query("DELETE FROM safety_blocks WHERE block_number = %s", (block_number,))
     
+    # ==================== ЗНАНИЯ О САМОЛЁТАХ ====================
+    
     def add_aircraft_knowledge(self, aircraft_type: str, knowledge_name: str, knowledge_text: str, file_id: str = None):
         self.execute_query(
             """INSERT INTO aircraft_knowledge (aircraft_type, knowledge_name, knowledge_text, file_id) 
@@ -533,7 +547,18 @@ class Database:
     def delete_aircraft_knowledge(self, knowledge_id: int):
         self.execute_query("DELETE FROM aircraft_knowledge WHERE id = %s", (knowledge_id,))
     
+    # ==================== УТИЛИТЫ ====================
+    
     def close(self):
         if self.db_pool:
             self.db_pool.closeall()
             logger.info("🔌 PostgreSQL отключена")
+
+
+# Глобальный экземпляр базы данных
+db = None
+if DATABASE_URL:
+    try:
+        db = Database(DATABASE_URL)
+    except Exception as e:
+        logger.error(f"❌ Не удалось инициализировать базу данных: {e}")
