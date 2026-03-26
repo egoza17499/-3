@@ -72,7 +72,7 @@ def format_phone_link(phone_number: str) -> str:
     return f"<a href='tel:{clean_number}'>{phone_number}</a>"
 
 
-def make_back_keyboard(callback_ str) -> InlineKeyboardMarkup:
+def make_back_keyboard(callback_data: str) -> InlineKeyboardMarkup:
     """Создать клавиатуру с кнопкой 'Назад'"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 Назад", callback_data=callback_data)]
