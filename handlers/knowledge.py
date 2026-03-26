@@ -5,6 +5,7 @@
 Полезная информация: аэродромы, телефоны, жильё, документы, блоки безопасности, знания о самолётах
 ✅ Телефоны кликабельные (tel: ссылки)
 ✅ Информация о жилье отображается
+✅ Блоки безопасности загружаются с Яндекс Диска (/Blocks)
 ✅ Защита от незарегистрированных пользователей
 """
 
@@ -24,8 +25,6 @@ from db_manager import (
     get_aerodromes_by_city,
     get_aerodrome_phones,
     get_aerodrome_documents,
-    get_safety_block_by_number,
-    get_all_safety_blocks,
     get_user
 )
 from utils.yandex_disk_client import YandexDiskClient
@@ -70,19 +69,27 @@ def make_back_keyboard(callback_data: str) -> InlineKeyboardMarkup:
     ])
 
 
+def make_main_menu_keyboard_small() -> ReplyKeyboardMarkup:
+    """Маленькое меню для возврата (2 кнопки как в старом образе)"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👤 Мой профиль")],
+            [KeyboardButton(text="📚 Полезная информация")]
+        ],
+        resize_keyboard=True
+    )
+
+
 def check_registration(message: Message) -> bool:
     """
     Проверка регистрации пользователя.
-    Returns True если зарегистрирован, иначе False и показывает сообщение.
+    Returns True если зарегистрирован, иначе показывает сообщение и возвращает False.
     """
     user_id = message.from_user.id
     user = get_user(user_id)
     
     if not user or not user.get('is_registered'):
-        # Возвращаем главное меню
-        from handlers.welcome import make_main_menu_keyboard
-        keyboard = make_main_menu_keyboard()
-        
+        keyboard = make_main_menu_keyboard_small()
         message.answer(
             "⚠️ <b>Сначала завершите регистрацию!</b>\n\n"
             "Нажмите /start или кнопку '📝 Регистрация' чтобы начать.",
@@ -93,16 +100,6 @@ def check_registration(message: Message) -> bool:
     
     return True
 
-
-def make_main_menu_keyboard_small() -> ReplyKeyboardMarkup:
-    """Маленькое меню для возврата"""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="👤 Мой профиль")],
-            [KeyboardButton(text="📚 Полезная информация")]
-        ],
-        resize_keyboard=True
-    )
 
 # ============================================================
 # ГЛАВНОЕ МЕНЮ ИНФОРМАЦИИ
@@ -478,25 +475,41 @@ async def download_file_handler(callback: CallbackQuery):
 
 
 # ============================================================
-# 🛡️ БЛОКИ БЕЗОПАСНОСТИ
+# 🛡️ БЛОКИ БЕЗОПАСНОСТИ — С ЯНДЕКС ДИСКА (/Blocks)
 # ============================================================
 
 @router.callback_query(F.data == "info_safety")
 async def info_safety(callback: CallbackQuery):
-    """Показать список блоков безопасности"""
+    """Показать список блоков безопасности с Яндекс Диска"""
     try:
-        blocks = get_all_safety_blocks()
+        if not YANDEX_DISK_TOKEN:
+            await callback.answer("⚠️ Токен Яндекс Диска не настроен", show_alert=True)
+            return
         
-        if not blocks:
+        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+        
+        # ✅ Получаем список файлов из папки /Blocks
+        files = await disk_client.list_files("/Blocks")
+        
+        if not files:
             await callback.answer("🛡️ Блоки безопасности пока не добавлены", show_alert=True)
             return
         
         keyboard_buttons = []
-        for block in blocks[:20]:  # Максимум 20 блоков
-            block_num = block.get('block_number')
+        for idx, file_info in enumerate(files):
+            file_name = file_info.get('name', 'Без названия')
+            file_id = f"block_{idx}"
+            
+            # Извлекаем номер блока из имени файла (например: "Блок_1.txt" -> "1")
+            block_num = re.search(r'(\d+)', file_name)
+            block_num = block_num.group(1) if block_num else str(idx + 1)
+            
+            # Обрезаем длинные имена
+            display_name = file_name[:35] + '…' if len(file_name) > 35 else file_name
+            
             keyboard_buttons.append([InlineKeyboardButton(
-                text=f"🔹 Блок №{block_num}",
-                callback_data=f"safety_block_{block_num}"
+                text=f"🔹 {display_name}",
+                callback_data=f"safety_block_{file_id}"
             )])
         
         keyboard_buttons.append([InlineKeyboardButton(
@@ -508,7 +521,7 @@ async def info_safety(callback: CallbackQuery):
         
         await callback.message.edit_text(
             "🛡️ <b>Блоки безопасности</b>\n\n"
-            f"Выберите номер блока (всего: {len(blocks)}):",
+            f"Выберите блок (всего: {len(files)}):",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
@@ -516,39 +529,63 @@ async def info_safety(callback: CallbackQuery):
         
     except Exception as e:
         logger.error(f"❌ Ошибка загрузки блоков: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
+        await callback.answer("❌ Ошибка при загрузке блоков", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("safety_block_"))
 async def safety_block_show(callback: CallbackQuery):
-    """Показать текст блока безопасности"""
+    """Показать содержимое блока безопасности из файла"""
     try:
-        block_number = int(callback.data.split("_")[-1])
-        block = get_safety_block_by_number(block_number)
+        if not YANDEX_DISK_TOKEN:
+            await callback.answer("⚠️ Токен не настроен", show_alert=True)
+            return
         
-        if not block:
+        # Извлекаем индекс файла
+        file_id = callback.data.replace("safety_block_", "")
+        idx = int(file_id.replace("block_", ""))
+        
+        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+        files = await disk_client.list_files("/Blocks")
+        
+        if idx >= len(files):
             await callback.answer("❌ Блок не найден", show_alert=True)
             return
         
-        block_text = block.get('block_text', '')
+        file_info = files[idx]
+        file_name = file_info.get('name', 'file')
+        full_path = file_info.get('path')
         
-        # Форматируем текст (заменяем переносы)
-        formatted_text = block_text.replace('\n', '\n')
+        # ✅ Скачиваем и читаем содержимое файла
+        file_content = await disk_client.download_file(full_path)
+        
+        if not file_content:
+            await callback.answer("❌ Ошибка чтения файла", show_alert=True)
+            return
+        
+        # Декодируем текст (поддержка UTF-8 и Windows кодировок)
+        try:
+            block_text = file_content.decode('utf-8')
+        except:
+            try:
+                block_text = file_content.decode('cp1251')
+            except:
+                block_text = file_content.decode('latin-1')
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 К списку блоков", callback_data="info_safety")],
             [InlineKeyboardButton(text="🔙 В меню информации", callback_data="info")]
         ])
         
+        # ✅ Отправляем текст блока
         await callback.message.edit_text(
-            f"🛡️ <b>Блок безопасности №{block_number}</b>\n\n"
-            f"{formatted_text}",
+            f"🛡️ <b>{file_name}</b>\n\n"
+            f"{block_text}",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
         await callback.answer()
         
-    except (ValueError, IndexError) as e:
+    except Exception as e:
         logger.error(f"❌ Ошибка показа блока: {e}")
         await callback.answer("❌ Ошибка", show_alert=True)
 
