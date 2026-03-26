@@ -5,7 +5,9 @@
 Полезная информация: аэродромы, телефоны, жильё, документы, блоки безопасности, знания о самолётах
 ✅ Телефоны кликабельные (tel: ссылки)
 ✅ Информация о жилье отображается
-✅ Блоки безопасности загружаются с Яндекс Диска (/Blocks)
+✅ Блоки безопасности: поиск по номеру + список файлов
+✅ Знания о самолётах с Яндекс Диска
+✅ Админ-функции: добавление/редактирование аэродромов, блоков, знаний
 ✅ Защита от незарегистрированных пользователей
 """
 
@@ -18,17 +20,34 @@ from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardButton, 
     InlineKeyboardMarkup, BufferedInputFile, ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton
 )
-from states import KnowledgeState
+from states import KnowledgeState, AdminKnowledgeState
 from db_manager import (
     get_aerodrome_by_id,
     get_aerodrome_by_search,
     get_aerodromes_by_city,
     get_aerodrome_phones,
     get_aerodrome_documents,
-    get_user
+    get_safety_block_by_number,
+    get_all_safety_blocks,
+    get_aircraft_knowledge_by_type,
+    add_aerodrome,
+    update_aerodrome,
+    delete_aerodrome,
+    add_aerodrome_phone,
+    delete_aerodrome_phone,
+    add_aerodrome_document,
+    delete_aerodrome_document,
+    add_safety_block,
+    update_safety_block,
+    delete_safety_block,
+    add_aircraft_knowledge,
+    delete_aircraft_knowledge,
+    get_user,
+    db
 )
 from utils.yandex_disk_client import YandexDiskClient
-from config import YANDEX_DISK_TOKEN
+from config import YANDEX_DISK_TOKEN, ADMIN_IDS
+from utils.admin_check import admin_required, admin_required_callback
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -44,14 +63,11 @@ def format_phone_link(phone_number: str) -> str:
     if not phone_number:
         return "Не указан"
     
-    # Если номер уже содержит HTML-ссылку, возвращаем как есть
     if '<a href' in phone_number.lower():
         return phone_number
     
-    # Очищаем номер от всего кроме цифр и +
     clean_number = re.sub(r'[^\d+]', '', phone_number)
     
-    # Корректируем префикс для tel: ссылки
     if clean_number.startswith('+'):
         pass
     elif clean_number.startswith('8') and len(clean_number) == 11:
@@ -83,7 +99,6 @@ def make_main_menu_keyboard_small() -> ReplyKeyboardMarkup:
 def check_registration(message: Message) -> bool:
     """
     Проверка регистрации пользователя.
-    Returns True если зарегистрирован, иначе показывает сообщение и возвращает False.
     """
     user_id = message.from_user.id
     user = get_user(user_id)
@@ -97,12 +112,11 @@ def check_registration(message: Message) -> bool:
             parse_mode="HTML"
         )
         return False
-    
     return True
 
 
 # ============================================================
-# ГЛАВНОЕ МЕНЮ ИНФОРМАЦИИ
+# ГЛАВНОЕ МЕНЮ ИНФОРМАЦИИ (ПОЛЬЗОВАТЕЛЬ)
 # ============================================================
 
 @router.callback_query(F.data == "info")
@@ -127,7 +141,7 @@ async def info_handler(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================
-# ✈️ ПОИСК АЭРОДРОМА
+# ✈️ ПОИСК АЭРОДРОМА (ПОЛЬЗОВАТЕЛЬ)
 # ============================================================
 
 @router.callback_query(F.data == "info_aerodrome")
@@ -148,7 +162,6 @@ async def info_aerodrome(callback: CallbackQuery, state: FSMContext):
 @router.message(KnowledgeState.aerodrome_search)
 async def aerodrome_search_handler(message: Message, state: FSMContext):
     """Обработчик поиска аэродрома по тексту"""
-    # ✅ ПРОВЕРКА РЕГИСТРАЦИИ
     if not check_registration(message):
         return
     
@@ -160,11 +173,9 @@ async def aerodrome_search_handler(message: Message, state: FSMContext):
     
     logger.info(f"✈️ Поиск аэродрома: '{search_text}'")
     
-    # Поиск аэродромов
     aerodromes = get_aerodromes_by_city(search_text)
     
     if not aerodromes:
-        # Пробуем точный поиск по названию
         aerodrome = get_aerodrome_by_search(search_text)
         if aerodrome:
             await show_aerodrome_details(message, aerodrome)
@@ -178,7 +189,6 @@ async def aerodrome_search_handler(message: Message, state: FSMContext):
         )
         return
     
-    # Если нашли несколько — показываем выбор
     if len(aerodromes) == 1:
         await show_aerodrome_details(message, aerodromes[0])
     else:
@@ -192,7 +202,7 @@ async def show_aerodrome_selection(message: Message, aerodromes: list, search_te
     text = f"🏙️ <b>В городе {city_name} найдено:</b>\n\n"
     
     keyboard_buttons = []
-    for aero in aerodromes[:10]:  # Максимум 10 результатов
+    for aero in aerodromes[:10]:
         display_name = aero.get('airport_name') or aero.get('name')
         city = aero.get('city', '')
         
@@ -217,25 +227,18 @@ async def show_aerodrome_selection(message: Message, aerodromes: list, search_te
 
 
 async def show_aerodrome_details(message: Message, aerodrome: dict):
-    """
-    Показать подробную информацию об аэродроме.
-    ✅ Телефоны кликабельные
-    ✅ Информация о жилье отображается
-    """
+    """Показать подробную информацию об аэродроме"""
     logger.info(f"✅ Показываем детали: {aerodrome.get('name')} ({aerodrome.get('city')})")
     
-    # Основные данные
     name = aerodrome.get('name', 'Неизвестно')
     city = aerodrome.get('city') or name
     airport = aerodrome.get('airport_name')
     housing = aerodrome.get('housing_info')
     
-    # Формируем заголовок
     text = f"🏙 <b>{city}</b>"
     if airport and airport != name:
         text += f"\n✈️ Аэродром: {airport}"
     
-    # ✅ Информация о жилье (обязательно отображаем)
     if housing and housing.lower() not in ['нет', 'не указано', 'уточняется', '']:
         text += f"\n🏠 Жильё: {housing}"
     else:
@@ -243,20 +246,16 @@ async def show_aerodrome_details(message: Message, aerodrome: dict):
     
     text += "\n"
     
-    # ✅ Телефоны с кликабельными ссылками
     phones = get_aerodrome_phones(aerodrome['id'])
     if phones:
         text += "\n📞 <b>Полезные номера:</b>\n"
         for phone in phones:
             phone_name = phone.get('phone_name', 'Не указано')
             phone_number = phone.get('phone_number', '')
-            
-            # ✅ Форматируем номер как кликабельную ссылку
             formatted_phone = format_phone_link(phone_number)
             text += f"• {phone_name}: {formatted_phone}\n"
         text += "\n<i>📱 Нажмите на номер чтобы позвонить</i>"
     
-    # Документы (кнопка если есть)
     documents = get_aerodrome_documents(aerodrome['id'])
     
     keyboard_buttons = []
@@ -279,7 +278,6 @@ async def show_aerodrome_details(message: Message, aerodrome: dict):
     
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     
-    # ✅ Обязательно parse_mode="HTML" для работы ссылок
     await message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
 
 
@@ -332,7 +330,229 @@ async def aerodrome_documents_show(callback: CallbackQuery):
 
 
 # ============================================================
-# ✈️ ЗНАНИЯ О САМОЛЁТАХ (YANDEX DISK)
+# 🛡️ БЛОКИ БЕЗОПАСНОСТИ (ПОЛЬЗОВАТЕЛЬ)
+# ============================================================
+
+@router.callback_query(F.data == "info_safety")
+async def info_safety(callback: CallbackQuery, state: FSMContext):
+    """Показать меню блоков безопасности"""
+    await state.set_state(KnowledgeState.safety_block_search)
+    await callback.message.edit_text(
+        "🛡️ <b>Блоки по безопасности полетов</b>\n\n"
+        "Напишите номер блока который вам необходим\n\n"
+        "Пример: <b>1</b> или <b>блок 1</b> или <b>Блок №1</b>\n\n"
+        "<i>Или выберите файл из списка ниже:</i>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Показать список блоков", callback_data="safety_list_files")]
+        ]),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "safety_list_files")
+async def safety_list_files(callback: CallbackQuery):
+    """Показать список файлов блоков с Яндекс Диска"""
+    try:
+        if not YANDEX_DISK_TOKEN:
+            await callback.answer("⚠️ Токен Яндекс Диска не настроен", show_alert=True)
+            return
+        
+        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+        files = await disk_client.list_files("/Blocks")
+        
+        if not files:
+            await callback.answer("🛡️ Блоки безопасности пока не добавлены", show_alert=True)
+            return
+        
+        keyboard_buttons = []
+        for file_info in files:
+            file_name = file_info.get('name', 'Без названия')
+            match = re.search(r'blocks?[_\s]?(\d+)', file_name.lower())
+            if match:
+                block_num = match.group(1)
+                keyboard_buttons.append([InlineKeyboardButton(
+                    text=f"🔹 {file_name}",
+                    callback_data=f"safety_file_{block_num}"
+                )])
+        
+        keyboard_buttons.append([InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data="info_safety"
+        )])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        
+        await callback.message.edit_text(
+            f"🛡️ <b>Блоки безопасности</b>\n\n"
+            f"Выберите блок (всего: {len(files)}):",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка загрузки списка блоков: {e}")
+        await callback.answer("❌ Ошибка при загрузке списка", show_alert=True)
+
+
+@router.message(KnowledgeState.safety_block_search)
+async def safety_block_search_handler(message: Message):
+    """Обработчик поиска блока по номеру"""
+    try:
+        text = message.text.strip().lower()
+        numbers = re.findall(r'\d+', text)
+        
+        if not numbers:
+            await message.answer(
+                "❌ Не удалось найти номер блока. Пожалуйста, введите число.\n\n"
+                "Пример: <b>1</b> или <b>блок 1</b> или <b>Блок №1</b>",
+                parse_mode="HTML"
+            )
+            return
+        
+        block_number = int(numbers[0])
+        
+        # Сначала ищем в базе данных
+        block = get_safety_block_by_number(block_number)
+        if block:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 К списку блоков", callback_data="info_safety")],
+                [InlineKeyboardButton(text="🔙 В меню информации", callback_data="info")]
+            ])
+            
+            await message.answer(
+                f"🛡️ <b>Блок безопасности №{block_number}</b>\n\n"
+                f"{block['block_text']}",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            return
+        
+        # Если не в базе — ищем на Яндекс Диске
+        if not YANDEX_DISK_TOKEN:
+            await message.answer("⚠️ Токен Яндекс Диска не настроен")
+            return
+        
+        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+        files = await disk_client.list_files("/Blocks")
+        
+        if not files:
+            await message.answer("🛡️ Блоки безопасности пока не добавлены")
+            return
+        
+        target_file = None
+        for file_info in files:
+            file_name = file_info.get('name', '').lower()
+            if re.search(rf'blocks?[_\s]?{block_number}', file_name):
+                target_file = file_info
+                break
+        
+        if not target_file:
+            await message.answer(
+                f"❌ Блок №{block_number} не найден.\n\n"
+                "Попробуйте другой номер или обратитесь к администратору."
+            )
+            return
+        
+        file_name = target_file.get('name', 'block.docx')
+        full_path = target_file.get('path')
+        
+        await message.answer("⏳ Загрузка блока...")
+        
+        file_content = await disk_client.download_file(full_path)
+        
+        if not file_content:
+            await message.answer("❌ Ошибка скачивания файла")
+            return
+        
+        from aiogram.types import BufferedInputFile
+        file_buffer = BufferedInputFile(file_content, filename=file_name)
+        
+        ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
+        
+        if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+            await message.answer_photo(
+                photo=file_buffer,
+                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer_document(
+                document=file_buffer,
+                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
+                parse_mode="HTML"
+            )
+        
+        logger.info(f"✅ Блок №{block_number} отправлен пользователю {message.from_user.id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка при отправке блока: {e}")
+        await message.answer("❌ Произошла ошибка при отправке блока")
+
+
+@router.callback_query(F.data.startswith("safety_file_"))
+async def safety_file_show(callback: CallbackQuery):
+    """Отправка файла блока по callback"""
+    try:
+        block_number = callback.data.replace("safety_file_", "")
+        
+        if not YANDEX_DISK_TOKEN:
+            await callback.answer("⚠️ Токен не настроен", show_alert=True)
+            return
+        
+        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+        files = await disk_client.list_files("/Blocks")
+        
+        target_file = None
+        for file_info in files:
+            file_name = file_info.get('name', '').lower()
+            if re.search(rf'blocks?[_\s]?{block_number}', file_name):
+                target_file = file_info
+                break
+        
+        if not target_file:
+            await callback.answer("❌ Файл не найден", show_alert=True)
+            return
+        
+        file_name = target_file.get('name', 'block.docx')
+        full_path = target_file.get('path')
+        
+        await callback.answer("⏳ Загрузка...", show_alert=False)
+        
+        file_content = await disk_client.download_file(full_path)
+        
+        if not file_content:
+            await callback.answer("❌ Ошибка скачивания", show_alert=True)
+            return
+        
+        from aiogram.types import BufferedInputFile
+        file_buffer = BufferedInputFile(file_content, filename=file_name)
+        
+        ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
+        
+        if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+            await callback.message.answer_photo(
+                photo=file_buffer,
+                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
+                parse_mode="HTML"
+            )
+        else:
+            await callback.message.answer_document(
+                document=file_buffer,
+                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
+                parse_mode="HTML"
+            )
+        
+        await callback.answer("✅ Файл отправлен!")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка отправки файла: {e}")
+        await callback.answer("❌ Ошибка отправки файла", show_alert=True)
+
+
+# ============================================================
+# ✈️ ЗНАНИЯ О САМОЛЁТАХ (ПОЛЬЗОВАТЕЛЬ)
 # ============================================================
 
 @router.callback_query(F.data == "info_aircraft")
@@ -357,7 +577,6 @@ async def info_aircraft(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("aircraft_"))
 async def aircraft_files(callback: CallbackQuery):
     """Показать файлы для выбранной модификации"""
-    # Маппинг callback_data на папку Яндекс Диска
     folder_map = {
         "aircraft_il76md": ("Il-76MD", "Ил-76МД"),
         "aircraft_il76mdm": ("Il-76MD-M", "Ил-76МД-М"),
@@ -383,11 +602,9 @@ async def aircraft_files(callback: CallbackQuery):
             return
         
         keyboard_buttons = []
-        for idx, file_info in enumerate(files[:20]):  # Максимум 20 файлов
+        for idx, file_info in enumerate(files[:20]):
             file_name = file_info.get('name', 'Без названия')
             file_id = f"{folder_path}_{idx}"
-            
-            # Обрезаем длинные имена
             display_name = file_name[:35] + '…' if len(file_name) > 35 else file_name
             
             keyboard_buttons.append([InlineKeyboardButton(
@@ -441,17 +658,13 @@ async def download_file_handler(callback: CallbackQuery):
         
         await callback.answer("⏳ Скачиваю...", show_alert=False)
         
-        # Скачиваем файл
         file_content = await disk_client.download_file(full_path)
         
         if not file_content:
             await callback.answer("❌ Ошибка скачивания", show_alert=True)
             return
         
-        # Отправляем файл
         file_buffer = BufferedInputFile(file_content, filename=file_name)
-        
-        # Определяем тип файла по расширению
         ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
         
         if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
@@ -475,231 +688,410 @@ async def download_file_handler(callback: CallbackQuery):
 
 
 # ============================================================
-# 🛡️ БЛОКИ БЕЗОПАСНОСТИ — С ЯНДЕКС ДИСКА
+# 🛠️ АДМИН: УПРАВЛЕНИЕ БАЗОЙ ЗНАНИЙ
 # ============================================================
 
-@router.callback_query(F.data == "info_safety")
-async def info_safety(callback: CallbackQuery, state: FSMContext):
-    """Показать меню блоков безопасности"""
-    await state.set_state(KnowledgeState.safety_block_search)
+@router.callback_query(F.data == "admin_knowledge")
+@admin_required_callback
+async def admin_knowledge(callback: CallbackQuery):
+    """Меню управления базой знаний"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✈️ Аэродромы", callback_data="admin_knowledge_aerodromes")],
+        [InlineKeyboardButton(text="🛡️ Блоки безопасности", callback_data="admin_knowledge_safety")],
+        [InlineKeyboardButton(text="📖 Знания по самолётам", callback_data="admin_knowledge_aircraft")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_functions")]
+    ])
+    
     await callback.message.edit_text(
-        "🛡️ <b>Блоки по безопасности полетов</b>\n\n"
-        "Напишите номер блока который вам необходим\n\n"
-        "Пример: <b>1</b> или <b>блок 1</b> или <b>Блок №1</b>\n\n"
-        "<i>Или выберите файл из списка ниже:</i>",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📋 Показать список блоков", callback_data="safety_list_files")]
-        ]),
+        "📚 <b>Управление базой знаний</b>\n\n"
+        "Выберите раздел:",
+        reply_markup=keyboard,
         parse_mode="HTML"
     )
     await callback.answer()
 
 
-@router.callback_query(F.data == "safety_list_files")
-async def safety_list_files(callback: CallbackQuery):
-    """Показать список файлов блоков с Яндекс Диска"""
+# ============================================================
+# 🛠️ АДМИН: АЭРОДРОМЫ
+# ============================================================
+
+@router.callback_query(F.data == "admin_knowledge_aerodromes")
+@admin_required_callback
+async def admin_knowledge_aerodromes(callback: CallbackQuery):
+    """Меню управления аэродромами"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить аэродром", callback_data="admin_aero_add")],
+        [InlineKeyboardButton(text="📋 Список аэродромов", callback_data="admin_aero_list")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_knowledge")]
+    ])
+    
+    await callback.message.edit_text(
+        "✈️ <b>Управление аэродромами</b>\n\n"
+        "Выберите действие:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_aero_add")
+@admin_required_callback
+async def admin_aero_add_start(callback: CallbackQuery, state: FSMContext):
+    """Начать добавление аэродрома"""
+    await callback.message.edit_text(
+        "➕ <b>Добавление аэродрома</b>\n\n"
+        "Введите название города/аэродрома:\n\n"
+        "Пример: Нижний Новгород",
+        reply_markup=make_back_keyboard("admin_knowledge_aerodromes"),
+        parse_mode="HTML"
+    )
+    await state.set_state(AdminKnowledgeState.aero_add_name)
+    await callback.answer()
+
+
+@router.message(AdminKnowledgeState.aero_add_name)
+@admin_required
+async def admin_aero_add_name(message: Message, state: FSMContext):
+    """Обработка названия аэродрома"""
+    await state.update_data(aero_name=message.text.strip())
+    await message.answer(
+        "Теперь введите название аэродрома (если отличается от города):\n\n"
+        "Пример: Стригино\n\n"
+        "Или напишите 'пропустить':",
+        reply_markup=make_back_keyboard("admin_knowledge_aerodromes")
+    )
+    await state.set_state(AdminKnowledgeState.aero_add_airport)
+
+
+@router.message(AdminKnowledgeState.aero_add_airport)
+@admin_required
+async def admin_aero_add_airport(message: Message, state: FSMContext):
+    """Обработка названия аэропорта"""
+    airport = message.text.strip()
+    if airport.lower() == 'пропустить':
+        airport = None
+    await state.update_data(aero_airport=airport)
+    await message.answer(
+        "Введите информацию о жилье:\n\n"
+        "Пример: Предоставляется бесплатно / Не предоставляется / Требуется справка",
+        reply_markup=make_back_keyboard("admin_knowledge_aerodromes")
+    )
+    await state.set_state(AdminKnowledgeState.aero_add_housing)
+
+
+@router.message(AdminKnowledgeState.aero_add_housing)
+@admin_required
+async def admin_aero_add_housing(message: Message, state: FSMContext):
+    """Обработка информации о жилье"""
+    data = await state.get_data()
+    db.add_aerodrome(
+        name=data['aero_name'],
+        city=data['aero_name'],
+        airport_name=data.get('aero_airport'),
+        housing_info=message.text.strip(),
+        created_by=message.from_user.id
+    )
+    await message.answer(
+        "✅ Аэродром добавлен!\n\n"
+        "Теперь добавьте телефоны (или напишите 'готово'):",
+        reply_markup=make_back_keyboard("admin_knowledge_aerodromes")
+    )
+    await state.set_state(AdminKnowledgeState.aero_add_phone_name)
+
+
+@router.message(AdminKnowledgeState.aero_add_phone_name)
+@admin_required
+async def admin_aero_add_phone_name(message: Message, state: FSMContext):
+    """Обработка названия телефона"""
+    if message.text.lower() == 'готово':
+        await state.clear()
+        await message.answer("✅ Аэродром полностью добавлен!", reply_markup=make_main_menu_keyboard_small())
+        return
+    await state.update_data(phone_name=message.text.strip())
+    await message.answer("Введите номер телефона:", reply_markup=make_back_keyboard("admin_knowledge_aerodromes"))
+    await state.set_state(AdminKnowledgeState.aero_add_phone_number)
+
+
+@router.message(AdminKnowledgeState.aero_add_phone_number)
+@admin_required
+async def admin_aero_add_phone_number(message: Message, state: FSMContext):
+    """Обработка номера телефона"""
+    data = await state.get_data()
+    aerodrome = db.get_aerodrome_by_search(data['aero_name'])
+    if aerodrome:
+        db.add_aerodrome_phone(aerodrome['id'], data['phone_name'], message.text.strip())
+        await message.answer(
+            "✅ Телефон добавлен!\n\n"
+            "Добавьте ещё телефон или напишите 'готово':",
+            reply_markup=make_back_keyboard("admin_knowledge_aerodromes")
+        )
+        await state.set_state(AdminKnowledgeState.aero_add_phone_name)
+    else:
+        await message.answer("❌ Ошибка! Аэродром не найден.")
+        await state.clear()
+
+
+@router.callback_query(F.data == "admin_aero_list")
+@admin_required_callback
+async def admin_aero_list(callback: CallbackQuery):
+    """Список аэродромов для админа"""
     try:
-        if not YANDEX_DISK_TOKEN:
-            await callback.answer("⚠️ Токен Яндекс Диска не настроен", show_alert=True)
+        aerodromes = db.get_all_aerodromes_list()
+        
+        if not aerodromes:
+            await callback.answer("✈️ Аэродромов пока нет", show_alert=True)
             return
         
-        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
-        files = await disk_client.list_files("/Blocks")
-        
-        if not files:
-            await callback.answer("🛡️ Блоки безопасности пока не добавлены", show_alert=True)
-            return
-        
+        text = "✈️ <b>Список аэродромов:</b>\n\n"
         keyboard_buttons = []
-        for file_info in files:
-            file_name = file_info.get('name', 'Без названия')
-            # Извлекаем номер из имени файла (blocks_1.docx -> 1)
-            import re
-            match = re.search(r'blocks_(\d+)', file_name.lower())
-            if match:
-                block_num = match.group(1)
-                keyboard_buttons.append([InlineKeyboardButton(
-                    text=f"🔹 {file_name}",
-                    callback_data=f"safety_file_{block_num}"
-                )])
+        
+        for aero in aerodromes[:20]:
+            name = aero.get('name', 'Неизвестно')
+            city = aero.get('city', '')
+            airport = aero.get('airport_name', '')
+            
+            display = f"{name}"
+            if city and city != name:
+                display += f" ({city})"
+            if airport:
+                display += f" - {airport}"
+            
+            keyboard_buttons.append([InlineKeyboardButton(
+                text=f"✈️ {display[:40]}",
+                callback_data=f"admin_aero_edit_{aero['id']}"
+            )])
         
         keyboard_buttons.append([InlineKeyboardButton(
             text="🔙 Назад",
-            callback_data="info_safety"
+            callback_data="admin_knowledge_aerodromes"
         )])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
         
         await callback.message.edit_text(
-            f"🛡️ <b>Блоки безопасности</b>\n\n"
-            f"Выберите блок (всего: {len(files)}):",
+            f"{text}\nВыберите аэродром для редактирования:",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
         await callback.answer()
         
     except Exception as e:
-        logger.error(f"❌ Ошибка загрузки списка блоков: {e}")
-        await callback.answer("❌ Ошибка при загрузке списка", show_alert=True)
+        logger.error(f"❌ Ошибка в admin_aero_list: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@router.message(KnowledgeState.safety_block_search)
-async def safety_block_search_handler(message: Message):
-    """
-    Обработчик поиска блока по номеру.
-    Пользователь пишет: "3" или "блок 3" или "Блок №3"
-    """
+# ============================================================
+# 🛠️ АДМИН: БЛОКИ БЕЗОПАСНОСТИ
+# ============================================================
+
+@router.callback_query(F.data == "admin_knowledge_safety")
+@admin_required_callback
+async def admin_knowledge_safety(callback: CallbackQuery):
+    """Меню управления блоками безопасности"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить блок", callback_data="admin_safety_add")],
+        [InlineKeyboardButton(text="📋 Список блоков", callback_data="admin_safety_list")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_knowledge")]
+    ])
+    
+    await callback.message.edit_text(
+        "🛡️ <b>Управление блоками безопасности</b>\n\n"
+        "Выберите действие:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_safety_add")
+@admin_required_callback
+async def admin_safety_add_start(callback: CallbackQuery, state: FSMContext):
+    """Начать добавление блока безопасности"""
+    await callback.message.edit_text(
+        "➕ <b>Добавление блока безопасности</b>\n\n"
+        "Введите номер блока:\n\n"
+        "Пример: 1",
+        reply_markup=make_back_keyboard("admin_knowledge_safety"),
+        parse_mode="HTML"
+    )
+    await state.set_state(AdminKnowledgeState.safety_add_number)
+    await callback.answer()
+
+
+@router.message(AdminKnowledgeState.safety_add_number)
+@admin_required
+async def admin_safety_add_number(message: Message, state: FSMContext):
+    """Обработка номера блока"""
     try:
-        text = message.text.strip().lower()
+        block_number = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Введите корректный номер (число)")
+        return
+    
+    existing = db.get_safety_block_by_number(block_number)
+    if existing:
+        await message.answer(f"❌ Блок №{block_number} уже существует!\n\nВведите другой номер:")
+        return
+    
+    await state.update_data(safety_number=block_number)
+    await message.answer(
+        "Теперь отправьте текст блока:",
+        reply_markup=make_back_keyboard("admin_knowledge_safety")
+    )
+    await state.set_state(AdminKnowledgeState.safety_add_text)
+
+
+@router.message(AdminKnowledgeState.safety_add_text)
+@admin_required
+async def admin_safety_add_text(message: Message, state: FSMContext):
+    """Обработка текста блока"""
+    data = await state.get_data()
+    db.add_safety_block(
+        block_number=data['safety_number'],
+        block_text=message.text,
+        created_by=message.from_user.id
+    )
+    await message.answer(f"✅ Блок безопасности №{data['safety_number']} добавлен!")
+    await state.clear()
+
+
+@router.callback_query(F.data == "admin_safety_list")
+@admin_required_callback
+async def admin_safety_list(callback: CallbackQuery):
+    """Список блоков для админа"""
+    try:
+        blocks = db.get_all_safety_blocks()
         
-        # Извлекаем номер из текста
-        import re
-        numbers = re.findall(r'\d+', text)
-        
-        if not numbers:
-            await message.answer(
-                "❌ Не удалось найти номер блока. Пожалуйста, введите число.\n\n"
-                "Пример: <b>1</b> или <b>блок 1</b> или <b>Блок №1</b>",
-                parse_mode="HTML"
-            )
+        if not blocks:
+            await callback.answer("🛡️ Блоков пока нет", show_alert=True)
             return
         
-        block_number = numbers[0]  # Берём первое найденное число
+        text = "🛡️ <b>Список блоков безопасности:</b>\n\n"
+        keyboard_buttons = []
         
-        # Ищем файл на Яндекс Диске
-        if not YANDEX_DISK_TOKEN:
-            await message.answer("⚠️ Токен Яндекс Диска не настроен")
-            return
+        for block in blocks[:20]:
+            num = block.get('block_number')
+            text_preview = block.get('block_text', '')[:50] + '...' if len(block.get('block_text', '')) > 50 else block.get('block_text', '')
+            
+            keyboard_buttons.append([InlineKeyboardButton(
+                text=f"🔹 Блок №{num}",
+                callback_data=f"admin_safety_edit_{num}"
+            )])
         
-        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
-        files = await disk_client.list_files("/Blocks")
+        keyboard_buttons.append([InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data="admin_knowledge_safety"
+        )])
         
-        if not files:
-            await message.answer("🛡️ Блоки безопасности пока не добавлены")
-            return
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
         
-        # Ищем файл с соответствующим номером
-        target_file = None
-        for file_info in files:
-            file_name = file_info.get('name', '').lower()
-            # Ищем patterns: blocks_1.docx, block_1.pdf, блок_1.txt и т.д.
-            if re.search(rf'blocks?[_\s]?{block_number}', file_name) or \
-               re.search(rf'блок[_\s]?{block_number}', file_name):
-                target_file = file_info
-                break
-        
-        if not target_file:
-            await message.answer(
-                f"❌ Блок №{block_number} не найден в базе.\n\n"
-                "Попробуйте другой номер или обратитесь к администратору."
-            )
-            return
-        
-        # Скачиваем и отправляем файл
-        file_name = target_file.get('name', 'block.docx')
-        full_path = target_file.get('path')
-        
-        await message.answer("⏳ Загрузка блока...")
-        
-        file_content = await disk_client.download_file(full_path)
-        
-        if not file_content:
-            await message.answer("❌ Ошибка скачивания файла")
-            return
-        
-        # Отправляем файл
-        from aiogram.types import BufferedInputFile
-        file_buffer = BufferedInputFile(file_content, filename=file_name)
-        
-        # Определяем тип файла
-        ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
-        
-        if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
-            await message.answer_photo(
-                photo=file_buffer,
-                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
-                parse_mode="HTML"
-            )
-        elif ext in ['pdf']:
-            await message.answer_document(
-                document=file_buffer,
-                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
-                parse_mode="HTML"
-            )
-        else:
-            # Для docx, txt и других
-            await message.answer_document(
-                document=file_buffer,
-                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
-                parse_mode="HTML"
-            )
-        
-        logger.info(f"✅ Блок №{block_number} отправлен пользователю {message.from_user.id}")
+        await callback.message.edit_text(
+            f"{text}\nВыберите блок для редактирования:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        await callback.answer()
         
     except Exception as e:
-        logger.error(f"❌ Ошибка при отправке блока: {e}")
-        await message.answer("❌ Произошла ошибка при отправке блока")
+        logger.error(f"❌ Ошибка в admin_safety_list: {e}")
+        await callback.answer("❌ Ошибка", show_alert=True)
 
 
-@router.callback_query(F.data.startswith("safety_file_"))
-async def safety_file_show(callback: CallbackQuery):
-    """Отправка файла блока по callback"""
-    try:
-        block_number = callback.data.replace("safety_file_", "")
-        
-        if not YANDEX_DISK_TOKEN:
-            await callback.answer("⚠️ Токен не настроен", show_alert=True)
-            return
-        
-        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
-        files = await disk_client.list_files("/Blocks")
-        
-        # Ищем файл
-        target_file = None
-        for file_info in files:
-            file_name = file_info.get('name', '').lower()
-            if re.search(rf'blocks?[_\s]?{block_number}', file_name):
-                target_file = file_info
-                break
-        
-        if not target_file:
-            await callback.answer("❌ Файл не найден", show_alert=True)
-            return
-        
-        file_name = target_file.get('name', 'block.docx')
-        full_path = target_file.get('path')
-        
-        await callback.answer("⏳ Загрузка...", show_alert=False)
-        
-        file_content = await disk_client.download_file(full_path)
-        
-        if not file_content:
-            await callback.answer("❌ Ошибка скачивания", show_alert=True)
-            return
-        
-        from aiogram.types import BufferedInputFile
-        file_buffer = BufferedInputFile(file_content, filename=file_name)
-        
-        ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
-        
-        if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
-            await callback.message.answer_photo(
-                photo=file_buffer,
-                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
-                parse_mode="HTML"
-            )
-        else:
-            await callback.message.answer_document(
-                document=file_buffer,
-                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
-                parse_mode="HTML"
-            )
-        
-        await callback.answer("✅ Файл отправлен!")
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка отправки файла: {e}")
-        await callback.answer("❌ Ошибка отправки файла", show_alert=True)
+# ============================================================
+# 🛠️ АДМИН: ЗНАНИЯ ПО САМОЛЁТАМ
+# ============================================================
+
+@router.callback_query(F.data == "admin_knowledge_aircraft")
+@admin_required_callback
+async def admin_knowledge_aircraft(callback: CallbackQuery):
+    """Меню управления знаниями по самолётам"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить знание", callback_data="admin_aircraft_add")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_knowledge")]
+    ])
+    
+    await callback.message.edit_text(
+        "📖 <b>Управление знаниями по самолётам</b>\n\n"
+        "Выберите действие:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_aircraft_add")
+@admin_required_callback
+async def admin_aircraft_add_start(callback: CallbackQuery, state: FSMContext):
+    """Выбор типа самолёта для добавления знания"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✈️ Ил-76МД", callback_data="aircraft_type_il76md")],
+        [InlineKeyboardButton(text="✈️ Ил-76МД-М", callback_data="aircraft_type_il76mdm")],
+        [InlineKeyboardButton(text="✈️ Ил-76МД-90А", callback_data="aircraft_type_il76md90a")]
+    ])
+    
+    await callback.message.edit_text(
+        "➕ <b>Добавление знания по самолёту</b>\n\n"
+        "Выберите тип самолёта:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    await state.set_state(AdminKnowledgeState.aircraft_add_type)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("aircraft_type_"))
+@admin_required_callback
+async def admin_aircraft_type_select(callback: CallbackQuery, state: FSMContext):
+    """Выбор типа самолёта"""
+    aircraft_map = {
+        "aircraft_type_il76md": "Ил-76МД",
+        "aircraft_type_il76mdm": "Ил-76МД-М",
+        "aircraft_type_il76md90a": "Ил-76МД-90А"
+    }
+    aircraft_type = aircraft_map.get(callback.data)
+    await state.update_data(aircraft_type=aircraft_type)
+    
+    await callback.message.edit_text(
+        f"✈️ {aircraft_type}\n\n"
+        "Введите название материала:\n\n"
+        "Пример: Руководство по эксплуатации",
+        reply_markup=make_back_keyboard("admin_knowledge_aircraft"),
+        parse_mode="HTML"
+    )
+    await state.set_state(AdminKnowledgeState.aircraft_add_name)
+    await callback.answer()
+
+
+@router.message(AdminKnowledgeState.aircraft_add_name)
+@admin_required
+async def admin_aircraft_add_name(message: Message, state: FSMContext):
+    """Обработка названия знания"""
+    await state.update_data(knowledge_name=message.text.strip())
+    await message.answer(
+        "Теперь отправьте текст материала (или напишите 'пропустить' если только файл):",
+        reply_markup=make_back_keyboard("admin_knowledge_aircraft")
+    )
+    await state.set_state(AdminKnowledgeState.aircraft_add_text)
+
+
+@router.message(AdminKnowledgeState.aircraft_add_text)
+@admin_required
+async def admin_aircraft_add_text(message: Message, state: FSMContext):
+    """Обработка текста знания"""
+    text = message.text.strip()
+    if text.lower() == 'пропустить':
+        text = None
+    await state.update_data(knowledge_text=text)
+    
+    data = await state.get_data()
+    db.add_aircraft_knowledge(
+        aircraft_type=data['aircraft_type'],
+        knowledge_name=data['knowledge_name'],
+        knowledge_text=data.get('knowledge_text')
+    )
+    
+    await message.answer("✅ Знание добавлено!")
+    await state.clear()
 
 
 # ============================================================
