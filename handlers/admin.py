@@ -23,7 +23,7 @@ from db_manager import (
     update_aerodrome, delete_aerodrome
 )
 from states import AdminState
-from utils.admin_check import admin_required, admin_required_callback
+from utils.admin_check import admin_required, admin_required_callback, admin_required_message
 
 logger = logging.getLogger(__name__)
 router = Router()
