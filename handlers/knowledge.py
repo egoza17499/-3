@@ -5,7 +5,7 @@
 Полезная информация: аэродромы, телефоны, жильё, документы, блоки безопасности, знания о самолётах
 ✅ Телефоны кликабельные (tel: ссылки)
 ✅ Информация о жилье отображается
-✅ HTML-форматирование для красивого вывода
+✅ Защита от незарегистрированных пользователей
 """
 
 import logging
@@ -15,7 +15,7 @@ from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardButton, 
-    InlineKeyboardMarkup, BufferedInputFile, ReplyKeyboardRemove
+    InlineKeyboardMarkup, BufferedInputFile, ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton
 )
 from states import KnowledgeState
 from db_manager import (
@@ -25,7 +25,8 @@ from db_manager import (
     get_aerodrome_phones,
     get_aerodrome_documents,
     get_safety_block_by_number,
-    get_all_safety_blocks
+    get_all_safety_blocks,
+    get_user
 )
 from utils.yandex_disk_client import YandexDiskClient
 from config import YANDEX_DISK_TOKEN
@@ -40,12 +41,6 @@ router = Router()
 def format_phone_link(phone_number: str) -> str:
     """
     Создает HTML-ссылку tel: для кликабельного номера телефона.
-    
-    Args:
-        phone_number: Номер телефона в любом формате
-        
-    Returns:
-        Строка с HTML-ссылкой или исходный номер если не удалось обработать
     """
     if not phone_number:
         return "Не указан"
@@ -59,16 +54,12 @@ def format_phone_link(phone_number: str) -> str:
     
     # Корректируем префикс для tel: ссылки
     if clean_number.startswith('+'):
-        # Уже есть +, оставляем как есть
         pass
     elif clean_number.startswith('8') and len(clean_number) == 11:
-        # Российский номер с 8, заменяем на +7
         clean_number = '+7' + clean_number[1:]
     elif clean_number.startswith('7') and len(clean_number) == 11:
-        # Российский номер с 7, добавляем +
         clean_number = '+' + clean_number
     
-    # Возвращаем оригинальное отображение с кликабельной ссылкой
     return f"<a href='tel:{clean_number}'>{phone_number}</a>"
 
 
@@ -78,6 +69,40 @@ def make_back_keyboard(callback_data: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🔙 Назад", callback_data=callback_data)]
     ])
 
+
+def check_registration(message: Message) -> bool:
+    """
+    Проверка регистрации пользователя.
+    Returns True если зарегистрирован, иначе False и показывает сообщение.
+    """
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    
+    if not user or not user.get('is_registered'):
+        # Возвращаем главное меню
+        from handlers.welcome import make_main_menu_keyboard
+        keyboard = make_main_menu_keyboard()
+        
+        message.answer(
+            "⚠️ <b>Сначала завершите регистрацию!</b>\n\n"
+            "Нажмите /start или кнопку '📝 Регистрация' чтобы начать.",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        return False
+    
+    return True
+
+
+def make_main_menu_keyboard_small() -> ReplyKeyboardMarkup:
+    """Маленькое меню для возврата"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👤 Мой профиль")],
+            [KeyboardButton(text="📚 Полезная информация")]
+        ],
+        resize_keyboard=True
+    )
 
 # ============================================================
 # ГЛАВНОЕ МЕНЮ ИНФОРМАЦИИ
@@ -126,6 +151,10 @@ async def info_aerodrome(callback: CallbackQuery, state: FSMContext):
 @router.message(KnowledgeState.aerodrome_search)
 async def aerodrome_search_handler(message: Message, state: FSMContext):
     """Обработчик поиска аэродрома по тексту"""
+    # ✅ ПРОВЕРКА РЕГИСТРАЦИИ
+    if not check_registration(message):
+        return
+    
     search_text = message.text.strip()
     
     # Игнорируем команды для блоков безопасности
@@ -147,7 +176,7 @@ async def aerodrome_search_handler(message: Message, state: FSMContext):
         await message.answer(
             f"❌ Аэродромы по запросу <b>\"{search_text}\"</b> не найдены.\n\n"
             "Попробуйте другое название:",
-            reply_markup=make_back_keyboard("info_aerodrome"),
+            reply_markup=make_main_menu_keyboard_small(),
             parse_mode="HTML"
         )
         return
@@ -431,12 +460,6 @@ async def download_file_handler(callback: CallbackQuery):
         if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
             await callback.message.answer_photo(
                 photo=file_buffer,
-                caption=f"📄 {file_name}",
-                parse_mode="HTML"
-            )
-        elif ext in ['pdf', 'doc', 'docx', 'txt', 'rtf']:
-            await callback.message.answer_document(
-                document=file_buffer,
                 caption=f"📄 {file_name}",
                 parse_mode="HTML"
             )
