@@ -475,20 +475,35 @@ async def download_file_handler(callback: CallbackQuery):
 
 
 # ============================================================
-# 🛡️ БЛОКИ БЕЗОПАСНОСТИ — С ЯНДЕКС ДИСКА (/Blocks)
+# 🛡️ БЛОКИ БЕЗОПАСНОСТИ — С ЯНДЕКС ДИСКА
 # ============================================================
 
 @router.callback_query(F.data == "info_safety")
-async def info_safety(callback: CallbackQuery):
-    """Показать список блоков безопасности с Яндекс Диска"""
+async def info_safety(callback: CallbackQuery, state: FSMContext):
+    """Показать меню блоков безопасности"""
+    await state.set_state(KnowledgeState.safety_block_search)
+    await callback.message.edit_text(
+        "🛡️ <b>Блоки по безопасности полетов</b>\n\n"
+        "Напишите номер блока который вам необходим\n\n"
+        "Пример: <b>1</b> или <b>блок 1</b> или <b>Блок №1</b>\n\n"
+        "<i>Или выберите файл из списка ниже:</i>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Показать список блоков", callback_data="safety_list_files")]
+        ]),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "safety_list_files")
+async def safety_list_files(callback: CallbackQuery):
+    """Показать список файлов блоков с Яндекс Диска"""
     try:
         if not YANDEX_DISK_TOKEN:
             await callback.answer("⚠️ Токен Яндекс Диска не настроен", show_alert=True)
             return
         
         disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
-        
-        # ✅ Получаем список файлов из папки /Blocks
         files = await disk_client.list_files("/Blocks")
         
         if not files:
@@ -496,31 +511,27 @@ async def info_safety(callback: CallbackQuery):
             return
         
         keyboard_buttons = []
-        for idx, file_info in enumerate(files):
+        for file_info in files:
             file_name = file_info.get('name', 'Без названия')
-            file_id = f"block_{idx}"
-            
-            # Извлекаем номер блока из имени файла (например: "Блок_1.txt" -> "1")
-            block_num = re.search(r'(\d+)', file_name)
-            block_num = block_num.group(1) if block_num else str(idx + 1)
-            
-            # Обрезаем длинные имена
-            display_name = file_name[:35] + '…' if len(file_name) > 35 else file_name
-            
-            keyboard_buttons.append([InlineKeyboardButton(
-                text=f"🔹 {display_name}",
-                callback_data=f"safety_block_{file_id}"
-            )])
+            # Извлекаем номер из имени файла (blocks_1.docx -> 1)
+            import re
+            match = re.search(r'blocks_(\d+)', file_name.lower())
+            if match:
+                block_num = match.group(1)
+                keyboard_buttons.append([InlineKeyboardButton(
+                    text=f"🔹 {file_name}",
+                    callback_data=f"safety_file_{block_num}"
+                )])
         
         keyboard_buttons.append([InlineKeyboardButton(
             text="🔙 Назад",
-            callback_data="info"
+            callback_data="info_safety"
         )])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
         
         await callback.message.edit_text(
-            "🛡️ <b>Блоки безопасности</b>\n\n"
+            f"🛡️ <b>Блоки безопасности</b>\n\n"
             f"Выберите блок (всего: {len(files)}):",
             reply_markup=keyboard,
             parse_mode="HTML"
@@ -528,66 +539,167 @@ async def info_safety(callback: CallbackQuery):
         await callback.answer()
         
     except Exception as e:
-        logger.error(f"❌ Ошибка загрузки блоков: {e}")
-        await callback.answer("❌ Ошибка при загрузке блоков", show_alert=True)
+        logger.error(f"❌ Ошибка загрузки списка блоков: {e}")
+        await callback.answer("❌ Ошибка при загрузке списка", show_alert=True)
 
 
-@router.callback_query(F.data.startswith("safety_block_"))
-async def safety_block_show(callback: CallbackQuery):
-    """Показать содержимое блока безопасности из файла"""
+@router.message(KnowledgeState.safety_block_search)
+async def safety_block_search_handler(message: Message):
+    """
+    Обработчик поиска блока по номеру.
+    Пользователь пишет: "3" или "блок 3" или "Блок №3"
+    """
     try:
-        if not YANDEX_DISK_TOKEN:
-            await callback.answer("⚠️ Токен не настроен", show_alert=True)
+        text = message.text.strip().lower()
+        
+        # Извлекаем номер из текста
+        import re
+        numbers = re.findall(r'\d+', text)
+        
+        if not numbers:
+            await message.answer(
+                "❌ Не удалось найти номер блока. Пожалуйста, введите число.\n\n"
+                "Пример: <b>1</b> или <b>блок 1</b> или <b>Блок №1</b>",
+                parse_mode="HTML"
+            )
             return
         
-        # Извлекаем индекс файла
-        file_id = callback.data.replace("safety_block_", "")
-        idx = int(file_id.replace("block_", ""))
+        block_number = numbers[0]  # Берём первое найденное число
+        
+        # Ищем файл на Яндекс Диске
+        if not YANDEX_DISK_TOKEN:
+            await message.answer("⚠️ Токен Яндекс Диска не настроен")
+            return
         
         disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
         files = await disk_client.list_files("/Blocks")
         
-        if idx >= len(files):
-            await callback.answer("❌ Блок не найден", show_alert=True)
+        if not files:
+            await message.answer("🛡️ Блоки безопасности пока не добавлены")
             return
         
-        file_info = files[idx]
-        file_name = file_info.get('name', 'file')
-        full_path = file_info.get('path')
+        # Ищем файл с соответствующим номером
+        target_file = None
+        for file_info in files:
+            file_name = file_info.get('name', '').lower()
+            # Ищем patterns: blocks_1.docx, block_1.pdf, блок_1.txt и т.д.
+            if re.search(rf'blocks?[_\s]?{block_number}', file_name) or \
+               re.search(rf'блок[_\s]?{block_number}', file_name):
+                target_file = file_info
+                break
         
-        # ✅ Скачиваем и читаем содержимое файла
+        if not target_file:
+            await message.answer(
+                f"❌ Блок №{block_number} не найден в базе.\n\n"
+                "Попробуйте другой номер или обратитесь к администратору."
+            )
+            return
+        
+        # Скачиваем и отправляем файл
+        file_name = target_file.get('name', 'block.docx')
+        full_path = target_file.get('path')
+        
+        await message.answer("⏳ Загрузка блока...")
+        
         file_content = await disk_client.download_file(full_path)
         
         if not file_content:
-            await callback.answer("❌ Ошибка чтения файла", show_alert=True)
+            await message.answer("❌ Ошибка скачивания файла")
             return
         
-        # Декодируем текст (поддержка UTF-8 и Windows кодировок)
-        try:
-            block_text = file_content.decode('utf-8')
-        except:
-            try:
-                block_text = file_content.decode('cp1251')
-            except:
-                block_text = file_content.decode('latin-1')
+        # Отправляем файл
+        from aiogram.types import BufferedInputFile
+        file_buffer = BufferedInputFile(file_content, filename=file_name)
         
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 К списку блоков", callback_data="info_safety")],
-            [InlineKeyboardButton(text="🔙 В меню информации", callback_data="info")]
-        ])
+        # Определяем тип файла
+        ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
         
-        # ✅ Отправляем текст блока
-        await callback.message.edit_text(
-            f"🛡️ <b>{file_name}</b>\n\n"
-            f"{block_text}",
-            reply_markup=keyboard,
-            parse_mode="HTML"
-        )
-        await callback.answer()
+        if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+            await message.answer_photo(
+                photo=file_buffer,
+                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
+                parse_mode="HTML"
+            )
+        elif ext in ['pdf']:
+            await message.answer_document(
+                document=file_buffer,
+                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
+                parse_mode="HTML"
+            )
+        else:
+            # Для docx, txt и других
+            await message.answer_document(
+                document=file_buffer,
+                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
+                parse_mode="HTML"
+            )
+        
+        logger.info(f"✅ Блок №{block_number} отправлен пользователю {message.from_user.id}")
         
     except Exception as e:
-        logger.error(f"❌ Ошибка показа блока: {e}")
-        await callback.answer("❌ Ошибка", show_alert=True)
+        logger.error(f"❌ Ошибка при отправке блока: {e}")
+        await message.answer("❌ Произошла ошибка при отправке блока")
+
+
+@router.callback_query(F.data.startswith("safety_file_"))
+async def safety_file_show(callback: CallbackQuery):
+    """Отправка файла блока по callback"""
+    try:
+        block_number = callback.data.replace("safety_file_", "")
+        
+        if not YANDEX_DISK_TOKEN:
+            await callback.answer("⚠️ Токен не настроен", show_alert=True)
+            return
+        
+        disk_client = YandexDiskClient(YANDEX_DISK_TOKEN)
+        files = await disk_client.list_files("/Blocks")
+        
+        # Ищем файл
+        target_file = None
+        for file_info in files:
+            file_name = file_info.get('name', '').lower()
+            if re.search(rf'blocks?[_\s]?{block_number}', file_name):
+                target_file = file_info
+                break
+        
+        if not target_file:
+            await callback.answer("❌ Файл не найден", show_alert=True)
+            return
+        
+        file_name = target_file.get('name', 'block.docx')
+        full_path = target_file.get('path')
+        
+        await callback.answer("⏳ Загрузка...", show_alert=False)
+        
+        file_content = await disk_client.download_file(full_path)
+        
+        if not file_content:
+            await callback.answer("❌ Ошибка скачивания", show_alert=True)
+            return
+        
+        from aiogram.types import BufferedInputFile
+        file_buffer = BufferedInputFile(file_content, filename=file_name)
+        
+        ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
+        
+        if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
+            await callback.message.answer_photo(
+                photo=file_buffer,
+                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
+                parse_mode="HTML"
+            )
+        else:
+            await callback.message.answer_document(
+                document=file_buffer,
+                caption=f"🛡️ <b>Блок безопасности №{block_number}</b>",
+                parse_mode="HTML"
+            )
+        
+        await callback.answer("✅ Файл отправлен!")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка отправки файла: {e}")
+        await callback.answer("❌ Ошибка отправки файла", show_alert=True)
 
 
 # ============================================================
