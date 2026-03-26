@@ -3,7 +3,7 @@
 """
 🛡️ handlers/admin.py — Административные функции
 ✅ Управление пользователями с поиском
-✅ Статистика
+✅ Статистика с правильными функциями
 ✅ Управление админами
 """
 
@@ -17,7 +17,18 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from config import ADMIN_IDS
 from validators import check_flight_ban, check_date_warnings, generate_profile_text
-from db_manager import db
+# ✅ ИСПРАВЛЕНО: импортируем функции напрямую из db_manager
+from db_manager import (
+    db,
+    get_all_users,
+    get_users_ready_to_fly,
+    get_users_cannot_fly,
+    search_users,
+    find_user_by_username,
+    add_admin,
+    remove_admin,
+    get_all_admins
+)
 from utils.admin_check import admin_required, admin_required_callback, admin_required_message
 
 logger = logging.getLogger(__name__)
@@ -88,7 +99,7 @@ async def admin_functions(callback: CallbackQuery):
 async def admin_list(callback: CallbackQuery, state: FSMContext):
     """Показать список всех пользователей с поиском"""
     try:
-        users = db.get_all_users()
+        users = get_all_users()  # ✅ ИСПРАВЛЕНО: функция из db_manager
         
         if not users:
             text = "📋 <b>Список пользователей:</b>\n\n"
@@ -148,7 +159,7 @@ async def admin_list_search_handler(message: Message):
         await message.answer("⚠️ Введите минимум 2 символа для поиска")
         return
     
-    users = db.search_users(search_text)
+    users = search_users(search_text)  # ✅ ИСПРАВЛЕНО: функция из db_manager
     
     if not users:
         await message.answer(
@@ -205,7 +216,7 @@ async def admin_list_search_handler(message: Message):
         await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 # ============================================================
-# СТАТИСТИКА
+# СТАТИСТИКА — ✅ ИСПРАВЛЕНО
 # ============================================================
 
 @router.callback_query(F.data == "admin_stats")
@@ -213,11 +224,12 @@ async def admin_list_search_handler(message: Message):
 async def admin_stats(callback: CallbackQuery):
     """Показать статистику"""
     try:
-        users = db.get_all_users()
+        users = get_all_users()  # ✅ ИСПРАВЛЕНО
         total = len(users) if users else 0
         
-        ready_users = db.get_users_ready_to_fly()
-        cannot_fly_users = db.get_users_cannot_fly()
+        # ✅ ИСПРАВЛЕНО: используем функции из db_manager, не методы db
+        ready_users = get_users_ready_to_fly()
+        cannot_fly_users = get_users_cannot_fly()
         
         can_fly = len(ready_users)
         cannot_fly = len(cannot_fly_users)
@@ -247,7 +259,8 @@ async def admin_stats(callback: CallbackQuery):
 async def admin_stats_show_ready(callback: CallbackQuery):
     """Показать пользователей готовых к полётам"""
     try:
-        users = db.get_users_ready_to_fly()
+        # ✅ ИСПРАВЛЕНО
+        users = get_users_ready_to_fly()
         
         if not users:
             await callback.answer("Нет пользователей готовых к полётам", show_alert=True)
@@ -281,7 +294,8 @@ async def admin_stats_show_ready(callback: CallbackQuery):
 async def admin_stats_show_cannot(callback: CallbackQuery):
     """Показать пользователей кто не может летать"""
     try:
-        users = db.get_users_cannot_fly()
+        # ✅ ИСПРАВЛЕНО
+        users = get_users_cannot_fly()
         
         if not users:
             await callback.answer("Нет пользователей кто не может летать", show_alert=True)
@@ -404,7 +418,8 @@ async def admin_add_admin_by_username(message: Message, state: FSMContext):
     """Добавить админа по username"""
     try:
         username = message.text.strip().lstrip('@')
-        user = db.find_user_by_username(username)
+        # ✅ ИСПРАВЛЕНО: используем функцию из db_manager
+        user = find_user_by_username(username)
         
         if not user:
             await message.answer(
@@ -414,7 +429,8 @@ async def admin_add_admin_by_username(message: Message, state: FSMContext):
             await state.clear()
             return
         
-        db.add_admin(user['user_id'], username, message.from_user.id)
+        # ✅ ИСПРАВЛЕНО: используем функцию из db_manager
+        add_admin(user['user_id'], username, message.from_user.id)
         
         await message.answer(
             f"✅ Пользователь @{username} (ID: {user['user_id']}) добавлен в админы!",
@@ -437,7 +453,8 @@ async def admin_remove_admin_start(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Только главный админ может удалять админов", show_alert=True)
         return
     
-    admins = db.get_all_admins()
+    # ✅ ИСПРАВЛЕНО: используем функцию из db_manager
+    admins = get_all_admins()
     
     if not admins:
         await callback.message.edit_text("📋 В базе нет дополнительных админов (кроме тех что в config)")
@@ -470,7 +487,8 @@ async def admin_remove_admin_by_id(message: Message, state: FSMContext):
             await state.clear()
             return
         
-        db.remove_admin(user_id)
+        # ✅ ИСПРАВЛЕНО: используем функцию из db_manager
+        remove_admin(user_id)
         
         await message.answer(
             f"✅ Админ с ID {user_id} удалён!",
