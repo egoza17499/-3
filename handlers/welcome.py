@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 👋 handlers/welcome.py
-Обработчики приветствий: /start в ЛС и сообщения в группе
+Обработчики приветствий: /start, /menu в ЛС и сообщения в группе
 ✅ Главное меню с 2 кнопками + админская
 ✅ Команда /menu
 """
@@ -12,7 +12,7 @@ from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from config import TOPIC_ID, GROUP_ID, ADMIN_IDS
-from db_manager import get_user, add_user
+from db_manager import get_user, add_user, db
 from states import RegistrationState
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,6 @@ async def cmd_start(message: Message, state: FSMContext):
     first_name = message.from_user.first_name or "Пользователь"
     
     # Проверяем админ-статус
-    from db_manager import db
     is_admin_user = user_id in ADMIN_IDS or db.check_admin_status(user_id, username)
     
     # Добавляем пользователя в БД если новый
@@ -103,7 +102,6 @@ async def cmd_menu(message: Message, state: FSMContext):
     first_name = message.from_user.first_name or "Пользователь"
     
     # Проверяем админ-статус
-    from db_manager import db
     is_admin_user = user_id in ADMIN_IDS or db.check_admin_status(user_id, username)
     
     # Проверяем регистрацию
@@ -136,10 +134,11 @@ async def start_registration_from_menu(message: Message, state: FSMContext):
     
     # Если уже зарегистрирован — напоминаем
     if user and user.get('is_registered'):
+        keyboard = make_main_menu_keyboard()
         await message.answer(
             "✅ Ты уже зарегистрирован!\n\n"
             "Используй меню для навигации.",
-            reply_markup=make_main_menu_keyboard()
+            reply_markup=keyboard
         )
         return
     
