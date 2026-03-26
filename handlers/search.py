@@ -10,7 +10,7 @@ import logging
 import re
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from db_manager import db, get_user
 from utils.admin_check import is_admin
 
