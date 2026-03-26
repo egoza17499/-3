@@ -16,15 +16,16 @@ class RegistrationState(StatesGroup):
     fio = State()                    # ФИО
     rank = State()                   # Звание
     qualification = State()          # Квалификация
-    leave_start_date = State()       # Дата начала отпуска
-    leave_end_date = State()         # Дата конца отпуска
-    vlk_date = State()               # Дата ВЛК
-    umo_date = State()               # Дата УМО
-    exercise_4_md_m_date = State()   # КБП-4 МД-М
-    exercise_7_md_m_date = State()   # КБП-7 МД-М
-    exercise_4_md_90a_date = State() # КБП-4 МД-90А
-    exercise_7_md_90a_date = State() # КБП-7 МД-90А
-    parachute_jump_date = State()    # Дата парашютного прыжка
+    dates = State()                  # ✅ ВСЕ ДАТЫ (один шаг для всех дат)
+    leave_start_date = State()       # Дата начала отпуска (опционально)
+    leave_end_date = State()         # Дата конца отпуска (опционально)
+    vlk_date = State()               # Дата ВЛК (опционально)
+    umo_date = State()               # Дата УМО (опционально)
+    exercise_4_md_m_date = State()   # КБП-4 МД-М (опционально)
+    exercise_7_md_m_date = State()   # КБП-7 МД-М (опционально)
+    exercise_4_md_90a_date = State() # КБП-4 МД-90А (опционально)
+    exercise_7_md_90a_date = State() # КБП-7 МД-90А (опционально)
+    parachute_jump_date = State()    # Дата парашютного прыжка (опционально)
 
 
 # ============================================================
