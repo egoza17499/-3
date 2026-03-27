@@ -3,8 +3,9 @@
 """
 👋 handlers/welcome.py
 Обработчики приветствий: /start, /menu в ЛС и сообщения в группе
-✅ Главное меню с 2 кнопками + админская
+✅ Главное меню: 2 кнопки + "Регистрация" (только для незарегистрированных) + админская
 ✅ Команда /menu
+✅ Корректное отображение кнопки регистрации
 """
 
 import logging
@@ -22,16 +23,28 @@ router = Router()
 welcomed_users: set[int] = set()
 
 # ============================================================
-# ГЛАВНОЕ МЕНЮ — КЛАВИАТУРА (2 кнопки + админская)
+# ГЛАВНОЕ МЕНЮ — КЛАВИАТУРА
 # ============================================================
 
-def make_main_menu_keyboard(is_admin: bool = False) -> ReplyKeyboardMarkup:
-    """Создать клавиатуру главного меню"""
-    keyboard = [
-        [KeyboardButton(text="👤 Мой профиль")],
-        [KeyboardButton(text="📚 Полезная информация")]
-    ]
+def make_main_menu_keyboard(is_admin: bool = False, show_registration: bool = False) -> ReplyKeyboardMarkup:
+    """
+    Создать клавиатуру главного меню.
     
+    Args:
+        is_admin: Показать ли админскую кнопку
+        show_registration: Показать ли кнопку "📝 Регистрация" (только для незарегистрированных)
+    """
+    keyboard = []
+    
+    # ✅ КНОПКА РЕГИСТРАЦИИ — ТОЛЬКО ДЛЯ НЕЗАРЕГИСТРИРОВАННЫХ
+    if show_registration:
+        keyboard.append([KeyboardButton(text="📝 Регистрация")])
+    
+    # Основные кнопки меню
+    keyboard.append([KeyboardButton(text="👤 Мой профиль")])
+    keyboard.append([KeyboardButton(text="📚 Полезная информация")])
+    
+    # Админская кнопка
     if is_admin:
         keyboard.append([KeyboardButton(text="🛡 Административные функции")])
     
@@ -58,18 +71,27 @@ async def cmd_start(message: Message, state: FSMContext):
     # Проверяем админ-статус
     is_admin_user = user_id in ADMIN_IDS or db.check_admin_status(user_id, username)
     
-    # Добавляем пользователя в БД если новый
+    # Проверяем пользователя в БД
     user = get_user(user_id)
+    
+    # Добавляем нового пользователя если не существует
     if not user:
         add_user(user_id, username)
         logger.info(f"✅ Новый пользователь {user_id} добавлен в БД")
+        user = get_user(user_id)  # Получаем свежего пользователя
     
-    # Создаем клавиатуру
-    keyboard = make_main_menu_keyboard(is_admin=is_admin_user)
+    # ✅ ОПРЕДЕЛЯЕМ: показывать ли кнопку регистрации
+    is_registered = user and user.get('is_registered')
+    show_registration = not is_registered
     
-    # Проверяем регистрацию
-    if user and user.get('is_registered'):
-        # Зарегистрирован — показываем меню
+    # Создаем клавиатуру с правильными кнопками
+    keyboard = make_main_menu_keyboard(
+        is_admin=is_admin_user,
+        show_registration=show_registration
+    )
+    
+    if is_registered:
+        # ✅ ЗАРЕГИСТРИРОВАН — показываем меню БЕЗ кнопки регистрации
         await message.answer(
             f"👋 Привет, {first_name}!\n\n"
             "Я — бот 81-го полка ✈️\n\n"
@@ -78,7 +100,7 @@ async def cmd_start(message: Message, state: FSMContext):
         )
         logger.info(f"✅ /start: пользователь {user_id} уже зарегистрирован")
     else:
-        # Не зарегистрирован — предлагаем регистрацию
+        # ✅ НЕ ЗАРЕГИСТРИРОВАН — показываем меню С кнопкой регистрации
         await message.answer(
             f"👋 Привет, {first_name}!\n\n"
             "Я — бот 81-го полка ✈️\n\n"
@@ -86,7 +108,7 @@ async def cmd_start(message: Message, state: FSMContext):
             reply_markup=keyboard,
             parse_mode="HTML"
         )
-        logger.info(f"✅ /start: новый пользователь {user_id} добавлен в БД")
+        logger.info(f"✅ /start: незарегистрированный пользователь {user_id}")
 
 # ============================================================
 # КОМАНДА /menu — ПОКАЗАТЬ ГЛАВНОЕ МЕНЮ
@@ -107,15 +129,18 @@ async def cmd_menu(message: Message, state: FSMContext):
     # Проверяем регистрацию
     user = get_user(user_id)
     if not user or not user.get('is_registered'):
+        # Незарегистрированный — показываем меню с кнопкой регистрации
+        keyboard = make_main_menu_keyboard(is_admin=False, show_registration=True)
         await message.answer(
-            "⚠️ Сначала завершите регистрацию!\n\n"
-            "Нажмите /start или кнопку '📝 Регистрация'",
-            reply_markup=ReplyKeyboardRemove()
+            f"👋 Привет, {first_name}!\n\n"
+            "<b>Для полного доступа пройди регистрацию:</b>",
+            reply_markup=keyboard,
+            parse_mode="HTML"
         )
         return
     
-    # Показываем меню
-    keyboard = make_main_menu_keyboard(is_admin=is_admin_user)
+    # Зарегистрированный — показываем обычное меню
+    keyboard = make_main_menu_keyboard(is_admin=is_admin_user, show_registration=False)
     await message.answer(
         f"👋 Привет, {first_name}!\n\n"
         "Главное меню:",
@@ -132,9 +157,10 @@ async def start_registration_from_menu(message: Message, state: FSMContext):
     user_id = message.from_user.id
     user = get_user(user_id)
     
-    # Если уже зарегистрирован — напоминаем
+    # Если уже зарегистрирован — напоминаем и показываем меню без кнопки регистрации
     if user and user.get('is_registered'):
-        keyboard = make_main_menu_keyboard()
+        is_admin_user = user_id in ADMIN_IDS or db.check_admin_status(user_id, message.from_user.username)
+        keyboard = make_main_menu_keyboard(is_admin=is_admin_user, show_registration=False)
         await message.answer(
             "✅ Ты уже зарегистрирован!\n\n"
             "Используй меню для навигации.",
