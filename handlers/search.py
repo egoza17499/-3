@@ -3,7 +3,7 @@
 """
 🔍 handlers/search.py
 Поиск ПОЛЬЗОВАТЕЛЕЙ — только для админов
-⚠️ НЕ трогает поиск аэродромов и кнопки меню!
+✅ Исправлены фильтры для aiogram 3.x
 """
 
 import logging
@@ -21,50 +21,61 @@ router = Router()
 # ФИЛЬТРЫ: что НЕ обрабатывать в этом хендлере
 # ============================================================
 
-# Кнопки главного меню — их обрабатывают другие хендлеры
 MENU_BUTTONS = [
-    "📝 Регистрация",
-    "👤 Мой профиль", 
-    "🔍 Поиск аэродрома",
-    "📚 Полезная информация",
-    "🛡️ Блоки безопасности",
+    "📝 Регистрация", "👤 Мой профиль", "🔍 Поиск аэродрома",
+    "📚 Полезная информация", "🛡️ Блоки безопасности",
     "/start", "/menu", "/cancel", "/profile"
 ]
 
-# Команды для блоков безопасности
 BLOCK_PATTERN = re.compile(r'^блок\s*№?\s*(\d+)$', re.IGNORECASE)
 
-# Поиск аэродромов (короткие слова — скорее всего названия городов)
-def is_aerodrome_search(text: str) -> bool:
-    """Проверить что текст похож на поиск аэродрома, а не пользователя"""
-    text_lower = text.lower().strip()
+def should_skip_search(text: str) -> bool:
+    """
+    Проверить нужно ли пропустить этот текст (не поиск пользователя).
     
-    # Короткие слова (1-10 символов) — скорее всего аэродромы
-    if len(text_lower) <= 10:
+    Returns:
+        True если текст НЕ является поиском пользователя
+    """
+    text_lower = text.strip().lower()
+    
+    # Исключаем кнопки меню
+    if text_lower in [b.lower() for b in MENU_BUTTONS]:
         return True
     
-    # Слова с дефисом или пробелом (названия городов)
-    if '-' in text_lower or ' ' in text_lower:
+    # Исключаем команды
+    if text_lower.startswith('/'):
         return True
     
-    # Русские буквы только (аэродромы обычно на русском)
-    if re.match(r'^[а-яё\s\-]+$', text_lower):
+    # Исключаем "блок N"
+    if BLOCK_PATTERN.match(text_lower):
         return True
     
     return False
+
+
+def is_likely_aerodrome_search(text: str) -> bool:
+    """
+    Эвристическая проверка: похоже ли на поиск аэродрома.
+    ⚠️ Используется как ДОПОЛНИТЕЛЬНЫЙ фильтр, не основной!
+    """
+    text_lower = text.strip().lower()
+    
+    # Очень короткие слова (1-3 символа) — скорее всего не фамилия
+    if len(text_lower) <= 3:
+        return True
+    
+    # Слова с дефисом и только русские буквы — часто названия городов
+    if '-' in text_lower and re.match(r'^[а-яё\-]+$', text_lower):
+        return True
+    
+    return False
+
 
 # ============================================================
 # ОБРАБОТЧИК ПОИСКА ПОЛЬЗОВАТЕЛЕЙ (ТОЛЬКО АДМИНЫ)
 # ============================================================
 
-@router.message(
-    F.text,
-    F.chat.type == "private",  # Только в личных сообщениях!
-    # ❌ ИСКЛЮЧАЕМ всё что НЕ поиск пользователя:
-    ~F.text.lower().in_([b.lower() for b in MENU_BUTTONS]),  # Не кнопки меню
-    ~F.text.regexp(BLOCK_PATTERN),  # Не "блок N"
-    ~F.text.regexp(re.compile(r'^\/\w+', re.IGNORECASE)),  # Не /команды
-)
+@router.message(F.chat.type == "private")
 async def search_users_handler(message: types.Message, state: FSMContext):
     """
     Поиск ПОЛЬЗОВАТЕЛЕЙ по ФИО или username.
@@ -73,18 +84,22 @@ async def search_users_handler(message: types.Message, state: FSMContext):
     
     search_text = message.text.strip()
     
-    # 🔥 ФИЛЬТР: если похоже на поиск аэродрома — пропускаем!
-    if is_aerodrome_search(search_text):
-        logger.debug(f"⏭️ Пропускаем (похоже на аэродром): '{search_text}'")
-        return  # Пусть обрабатывает handlers/aerodrome_search.py
+    # 🔥 ФИЛЬТР 1: исключаем кнопки меню, команды, блоки
+    if should_skip_search(search_text):
+        return
     
     user_id = message.from_user.id
     username = message.from_user.username
     
-    # Проверка админ-статуса
+    # 🔥 ФИЛЬТР 2: только админы
     if not await is_admin(user_id, username):
-        logger.info(f"⏭️ Пропускаем (не админ): '{search_text}'")
         return
+    
+    # 🔥 ФИЛЬТР 3: эвристика для аэродромов (опционально)
+    # Если хотите чтобы поиск аэродромов работал отдельно — раскомментируйте:
+    # if is_likely_aerodrome_search(search_text):
+    #     logger.debug(f"⏭️ Пропускаем (похоже на аэродром): '{search_text}'")
+    #     return
     
     # Поиск пользователей в БД
     logger.info(f"🔍 Поиск пользователя админом: '{search_text}'")
@@ -103,7 +118,7 @@ async def search_users_handler(message: types.Message, state: FSMContext):
     keyboard = []
     
     for user in users[:10]:  # Показываем максимум 10 результатов
-        # ✅ user — это dict, не кортеж!
+        # ✅ user — это dict, используем .get()
         user_id_db = user.get('user_id')
         username_db = user.get('username') or "N/A"
         fio = user.get('fio') or "Не указано"
@@ -128,6 +143,7 @@ async def search_users_handler(message: types.Message, state: FSMContext):
     
     await message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
     logger.info(f"✅ Найдено {len(users)} пользователей по запросу '{search_text}'")
+
 
 # ============================================================
 # ОБРАБОТЧИК CALLBACK: профиль пользователя (для админов)
