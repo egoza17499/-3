@@ -20,7 +20,6 @@ from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardButton, 
     InlineKeyboardMarkup, BufferedInputFile, ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton
 )
-from aiogram.types import Message
 from states import KnowledgeState, AdminKnowledgeState
 from db_manager import (
     get_aerodrome_by_id,
