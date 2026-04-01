@@ -5,6 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from validators import generate_profile_text, check_flight_ban
 from db_manager import db
+from aiogram.types import Message
 from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
