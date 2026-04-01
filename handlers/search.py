@@ -5,19 +5,22 @@
 Поиск ПОЛЬЗОВАТЕЛЕЙ — только для админов
 ✅ Показывает полный профиль (как "Мой профиль")
 ✅ Кнопки: Редактировать ФИО + Удалить пользователя
+✅ Исправлен импорт Message
 """
 
 import logging
 import re
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from aiogram.types import (  # ✅ Добавили Message сюда
+    InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, Message
+)
 from aiogram.fsm.state import State, StatesGroup
 from validators import generate_profile_text, check_flight_ban
 from db_manager import db, get_user, update_user, delete_user
 from utils.admin_check import is_admin
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # ✅ __name__ правильно
 router = Router()
 
 # ============================================================
@@ -82,7 +85,7 @@ def is_likely_aerodrome_search(text: str) -> bool:
 # ============================================================
 
 @router.message(F.chat.type == "private")
-async def search_users_handler(message: types.Message, state: FSMContext):
+async def search_users_handler(message: Message, state: FSMContext):  # ✅ Message теперь определён
     """
     Поиск ПОЛЬЗОВАТЕЛЕЙ по ФИО или username.
     Работает ТОЛЬКО для админов в личных сообщениях.
@@ -250,7 +253,7 @@ async def admin_edit_user_fio_start(callback: CallbackQuery, state: FSMContext):
 
 
 @router.message(AdminEditState.waiting_for_fio)
-async def admin_edit_user_fio_save(message: Message, state: FSMContext):
+async def admin_edit_user_fio_save(message: Message, state: FSMContext):  # ✅ Message теперь определён
     """Сохранить новое ФИО пользователя"""
     
     user_id = message.from_user.id
