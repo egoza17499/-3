@@ -2,13 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 👋 handlers/welcome.py
-Обработчики приветствий: /start, /menu в ЛС и сообщения в группе
-✅ Главное меню: 2 кнопки + "Регистрация" (только для незарегистрированных) + админская
-✅ Команда /menu
-✅ Корректное отображение кнопки регистрации
+Обработчики приветствий: /start в ЛС и сообщения в группе
+✅ Только 1 приветствие на пользователя
+✅ Лимит 5 сообщений в сутки в группе
+✅ Работает только в своей теме
 """
 
 import logging
+import time
+from datetime import datetime, timedelta
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
@@ -19,32 +21,69 @@ from states import RegistrationState
 logger = logging.getLogger(__name__)
 router = Router()
 
-# Кэш приветствованных пользователей в группе
-welcomed_users: set[int] = set()
+# ============================================================
+# КЭШИРОВАНИЕ ПРИВЕТСТВИЙ (с лимитом 5 сообщений в сутки)
+# ============================================================
+
+# Хранилище: {user_id: {'count': int, 'date': str, 'welcomed': bool}}
+user_message_stats = {}
+
+def get_user_daily_stats(user_id: int) -> dict:
+    """Получить статистику сообщений пользователя за сегодня"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    if user_id not in user_message_stats:
+        user_message_stats[user_id] = {
+            'count': 0,
+            'date': today,
+            'welcomed': False
+        }
+    
+    # Если новый день — сбрасываем счётчик
+    if user_message_stats[user_id]['date'] != today:
+        user_message_stats[user_id] = {
+            'count': 0,
+            'date': today,
+            'welcomed': user_message_stats[user_id].get('welcomed', False)
+        }
+    
+    return user_message_stats[user_id]
+
+def can_send_message(user_id: int) -> bool:
+    """Проверить можно ли отправить сообщение пользователю (лимит 5 в сутки)"""
+    stats = get_user_daily_stats(user_id)
+    return stats['count'] < 5
+
+def increment_message_count(user_id: int):
+    """Увеличить счётчик сообщений пользователя"""
+    stats = get_user_daily_stats(user_id)
+    stats['count'] += 1
+
+def was_user_welcomed(user_id: int) -> bool:
+    """Проверить был ли пользователь уже приветствован"""
+    stats = get_user_daily_stats(user_id)
+    return stats.get('welcomed', False)
+
+def mark_user_welcomed(user_id: int):
+    """Отметить пользователя как приветствованного"""
+    stats = get_user_daily_stats(user_id)
+    stats['welcomed'] = True
 
 # ============================================================
 # ГЛАВНОЕ МЕНЮ — КЛАВИАТУРА
 # ============================================================
 
 def make_main_menu_keyboard(is_admin: bool = False, show_registration: bool = False) -> ReplyKeyboardMarkup:
-    """
-    Создать клавиатуру главного меню.
-    
-    Args:
-        is_admin: Показать ли админскую кнопку
-        show_registration: Показать ли кнопку "📝 Регистрация" (только для незарегистрированных)
-    """
+    """Создать клавиатуру главного меню"""
     keyboard = []
     
-    # ✅ КНОПКА РЕГИСТРАЦИИ — ТОЛЬКО ДЛЯ НЕЗАРЕГИСТРИРОВАННЫХ
+    # Кнопка регистрации — только для незарегистрированных
     if show_registration:
         keyboard.append([KeyboardButton(text="📝 Регистрация")])
     
-    # Основные кнопки меню
     keyboard.append([KeyboardButton(text="👤 Мой профиль")])
     keyboard.append([KeyboardButton(text="📚 Полезная информация")])
     
-    # Админская кнопка
     if is_admin:
         keyboard.append([KeyboardButton(text="🛡 Административные функции")])
     
@@ -55,43 +94,38 @@ def make_main_menu_keyboard(is_admin: bool = False, show_registration: bool = Fa
     )
 
 # ============================================================
-# КОМАНДА /start — ГЛАВНОЕ МЕНЮ
+# КОМАНДА /start В ЛИЧНЫХ СООБЩЕНИЯХ
 # ============================================================
 
 @router.message(F.text == "/start")
 async def cmd_start(message: Message, state: FSMContext):
     """Обработчик команды /start"""
-    # Сбрасываем все состояния
+    if message.chat.type in ['group', 'supergroup']:
+        return
+    
     await state.clear()
     
     user_id = message.from_user.id
     username = message.from_user.username or ""
     first_name = message.from_user.first_name or "Пользователь"
     
-    # Проверяем админ-статус
     is_admin_user = user_id in ADMIN_IDS or db.check_admin_status(user_id, username)
     
-    # Проверяем пользователя в БД
     user = get_user(user_id)
-    
-    # Добавляем нового пользователя если не существует
     if not user:
         add_user(user_id, username)
         logger.info(f"✅ Новый пользователь {user_id} добавлен в БД")
-        user = get_user(user_id)  # Получаем свежего пользователя
+        user = get_user(user_id)
     
-    # ✅ ОПРЕДЕЛЯЕМ: показывать ли кнопку регистрации
     is_registered = user and user.get('is_registered')
     show_registration = not is_registered
     
-    # Создаем клавиатуру с правильными кнопками
     keyboard = make_main_menu_keyboard(
         is_admin=is_admin_user,
         show_registration=show_registration
     )
     
     if is_registered:
-        # ✅ ЗАРЕГИСТРИРОВАН — показываем меню БЕЗ кнопки регистрации
         await message.answer(
             f"👋 Привет, {first_name}!\n\n"
             "Я — бот 81-го полка ✈️\n\n"
@@ -100,7 +134,6 @@ async def cmd_start(message: Message, state: FSMContext):
         )
         logger.info(f"✅ /start: пользователь {user_id} уже зарегистрирован")
     else:
-        # ✅ НЕ ЗАРЕГИСТРИРОВАН — показываем меню С кнопкой регистрации
         await message.answer(
             f"👋 Привет, {first_name}!\n\n"
             "Я — бот 81-го полка ✈️\n\n"
@@ -111,7 +144,7 @@ async def cmd_start(message: Message, state: FSMContext):
         logger.info(f"✅ /start: незарегистрированный пользователь {user_id}")
 
 # ============================================================
-# КОМАНДА /menu — ПОКАЗАТЬ ГЛАВНОЕ МЕНЮ
+# КОМАНДА /menu
 # ============================================================
 
 @router.message(F.text == "/menu")
@@ -123,13 +156,10 @@ async def cmd_menu(message: Message, state: FSMContext):
     username = message.from_user.username or ""
     first_name = message.from_user.first_name or "Пользователь"
     
-    # Проверяем админ-статус
     is_admin_user = user_id in ADMIN_IDS or db.check_admin_status(user_id, username)
     
-    # Проверяем регистрацию
     user = get_user(user_id)
     if not user or not user.get('is_registered'):
-        # Незарегистрированный — показываем меню с кнопкой регистрации
         keyboard = make_main_menu_keyboard(is_admin=False, show_registration=True)
         await message.answer(
             f"👋 Привет, {first_name}!\n\n"
@@ -139,7 +169,6 @@ async def cmd_menu(message: Message, state: FSMContext):
         )
         return
     
-    # Зарегистрированный — показываем обычное меню
     keyboard = make_main_menu_keyboard(is_admin=is_admin_user, show_registration=False)
     await message.answer(
         f"👋 Привет, {first_name}!\n\n"
@@ -157,7 +186,6 @@ async def start_registration_from_menu(message: Message, state: FSMContext):
     user_id = message.from_user.id
     user = get_user(user_id)
     
-    # Если уже зарегистрирован — напоминаем и показываем меню без кнопки регистрации
     if user and user.get('is_registered'):
         is_admin_user = user_id in ADMIN_IDS or db.check_admin_status(user_id, message.from_user.username)
         keyboard = make_main_menu_keyboard(is_admin=is_admin_user, show_registration=False)
@@ -168,7 +196,6 @@ async def start_registration_from_menu(message: Message, state: FSMContext):
         )
         return
     
-    # Запускаем FSM регистрацию
     await state.set_state(RegistrationState.fio)
     await message.answer(
         "📝 <b>Начинаем регистрацию!</b>\n\n"
@@ -181,7 +208,7 @@ async def start_registration_from_menu(message: Message, state: FSMContext):
     logger.info(f"✅ Регистрация начата пользователем {user_id}")
 
 # ============================================================
-# ПРИВЕТСТВИЕ В ГРУППЕ (в нужной теме)
+# ПРИВЕТСТВИЕ В ГРУППЕ (с лимитами)
 # ============================================================
 
 def _is_in_correct_topic(message: Message) -> bool:
@@ -195,14 +222,33 @@ def _is_in_correct_topic(message: Message) -> bool:
 @router.message(
     F.chat.type.in_(['group', 'supergroup']),
     F.text,
-    lambda msg: msg.from_user.id not in welcomed_users 
-    and _is_in_correct_topic(msg)
-    and not msg.from_user.is_bot
+    lambda msg: not msg.from_user.is_bot
 )
 async def group_first_message_handler(message: Message):
-    """Приветствие при первом сообщении пользователя в группе"""
+    """
+    Обработчик первого сообщения пользователя в группе.
+    ✅ Только 1 приветствие на пользователя
+    ✅ Лимит 5 сообщений в сутки
+    ✅ Только в своей теме
+    """
+    # Проверяем тему
+    if not _is_in_correct_topic(message):
+        return
+    
     user_id = message.from_user.id
-    welcomed_users.add(user_id)
+    
+    # Проверяем лимит сообщений в сутки
+    if not can_send_message(user_id):
+        logger.info(f"⏭️ Превышен лимит сообщений для пользователя {user_id}")
+        return
+    
+    # Проверяем было ли уже приветствие
+    if was_user_welcomed(user_id):
+        return
+    
+    # Отмечаем что приветствовали
+    mark_user_welcomed(user_id)
+    increment_message_count(user_id)
     
     bot_link = "https://t.me/help_81polk_bot"
     welcome_text = (
@@ -229,16 +275,25 @@ async def group_first_message_handler(message: Message):
     lambda msg: _is_in_correct_topic(msg)
 )
 async def on_new_member_join(message: Message):
-    """Приветствие нового участника в группе"""
+    """Приветствие нового участника в группе (с лимитами)"""
     for new_member in message.new_chat_members:
         if new_member.is_bot:
             continue
         
         user_id = new_member.id
-        if user_id in welcomed_users:
-            continue
         
-        welcomed_users.add(user_id)
+        # Проверяем лимит
+        if not can_send_message(user_id):
+            logger.info(f"⏭️ Превышен лимит сообщений для нового участника {user_id}")
+            return
+        
+        # Проверяем было ли приветствие
+        if was_user_welcomed(user_id):
+            return
+        
+        # Отмечаем что приветствовали
+        mark_user_welcomed(user_id)
+        increment_message_count(user_id)
         
         bot_link = "https://t.me/help_81polk_bot"
         welcome_text = (
