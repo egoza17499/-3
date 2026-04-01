@@ -9,6 +9,7 @@ from db_manager import (
     delete_aerodrome_phone
 )
 from states import EditAerodromeState
+from aiogram.types import Message
 import logging
 
 logger = logging.getLogger(__name__)
