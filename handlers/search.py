@@ -309,7 +309,7 @@ async def admin_delete_user_confirm(callback: CallbackQuery):
     
     fio = target_user.get('fio') or "Неизвестно"
     
-    # ✅ Показываем НОВОЕ сообщение с подтверждением
+    # Показываем подтверждение
     keyboard = [
         [InlineKeyboardButton(
             text="✅ Да, удалить",
@@ -321,15 +321,31 @@ async def admin_delete_user_confirm(callback: CallbackQuery):
         )]
     ]
     
-    await callback.message.answer(
-        f"🗑️ <b>Удаление пользователя</b>\n\n"
-        f"Вы действительно хотите удалить пользователя?\n\n"
-        f"👤 {fio}\n"
-        f"ID: {target_user_id}\n\n"
-        f"<b>⚠️ Это действие нельзя отменить!</b>",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-        parse_mode="HTML"
-    )
+    # ✅ ИСПРАВЛЕНО: редактируем существующее сообщение вместо создания нового
+    try:
+        await callback.message.edit_text(
+            f"🗑️ <b>Удаление пользователя</b>\n\n"
+            f"Вы действительно хотите удалить пользователя?\n\n"
+            f"👤 {fio}\n"
+            f"ID: {target_user_id}\n\n"
+            f"<b>⚠️ Это действие нельзя отменить!</b>",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        # Если сообщение нельзя отредактировать (уже удалено или изменено)
+        logger.warning(f"⚠️ Не удалось отредактировать сообщение: {e}")
+        # Отправляем новое сообщение как запасной вариант
+        await callback.message.answer(
+            f"🗑️ <b>Удаление пользователя</b>\n\n"
+            f"Вы действительно хотите удалить пользователя?\n\n"
+            f"👤 {fio}\n"
+            f"ID: {target_user_id}\n\n"
+            f"<b>⚠️ Это действие нельзя отменить!</b>",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+            parse_mode="HTML"
+        )
+    
     await callback.answer()
 
 
