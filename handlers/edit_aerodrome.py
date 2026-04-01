@@ -1,6 +1,6 @@
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from db_manager import (
     db,
     get_aerodrome_by_id,
@@ -9,7 +9,6 @@ from db_manager import (
     delete_aerodrome_phone
 )
 from states import EditAerodromeState
-from aiogram.types import Message
 import logging
 
 logger = logging.getLogger(__name__)
