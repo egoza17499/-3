@@ -4,18 +4,23 @@
 📱 handlers/menu.py — Главное меню бота
 ✅ Постоянная клавиатура внизу экрана
 ✅ Проверка регистрации
+✅ Исправлен импорт Message
 """
 
 import logging
-from aiogram import Router, F, types, Message
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import Router, F, types  # ✅ Убрали Message отсюда
+from aiogram.types import (  # ✅ Добавили Message сюда
+    ReplyKeyboardMarkup, KeyboardButton, 
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    Message  # ✅ Message импортируем из правильного места
+)
 from aiogram.fsm.context import FSMContext
 from config import ADMIN_IDS
 from validators import generate_profile_text, check_flight_ban
 from db_manager import db, get_user
 from utils.registration_check import registration_required
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # ✅ __name__ правильно
 router = Router()
 
 def get_main_keyboard(is_admin=False):
@@ -31,7 +36,7 @@ def get_main_keyboard(is_admin=False):
 
 @router.message(F.text == "👤 Мой профиль")
 @registration_required  # ✅ ПРОВЕРКА РЕГИСТРАЦИИ
-async def show_profile(message: types.Message):
+async def show_profile(message: Message):  # ✅ Message теперь определён
     """Показать профиль пользователя"""
     user = db.get_user(message.from_user.id)
     
@@ -55,7 +60,7 @@ async def show_profile(message: types.Message):
 
 @router.message(F.text == "📚 Полезная информация")
 @registration_required  # ✅ ПРОВЕРКА РЕГИСТРАЦИИ
-async def show_info(message: types.Message):
+async def show_info(message: Message):  # ✅ Message теперь определён
     """Показать меню полезной информации"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛡️ Блоки по безопасности полетов", callback_data="info_safety")],
@@ -72,7 +77,7 @@ async def show_info(message: types.Message):
 
 @router.message(F.text == "🛡 Административные функции")
 @registration_required  # ✅ ПРОВЕРКА РЕГИСТРАЦИИ
-async def admin_functions(message: types.Message):
+async def admin_functions(message: Message):  # ✅ Message теперь определён
     """Админское меню"""
     user_id = message.from_user.id
     
