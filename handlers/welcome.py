@@ -298,7 +298,7 @@ async def on_new_member_join(message: Message):
         bot_link = "https://t.me/help_81polk_bot"
         welcome_text = (
             f"Здравствуйте, {new_member.full_name}! 👋\n\n"
-            f"Я — бот 81-го полка. Помогаю с информацией об аэродромах, "
+            f"Я — бот. Помогаю с информацией об аэродромах, "
             f"телефонах и блоках безопасности.\n\n"
             f"🔗 <b>Ссылка на бота:</b> {bot_link}\n\n"
             f"💡 <i>Для начала работы перейдите по ссылке и нажмите /start</i>"
