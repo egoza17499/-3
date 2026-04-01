@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+👥 handlers/group.py
+Обработка сообщений в группе и блоки безопасности из Yandex Disk
+✅ Работает и в ЛС, и в группе!
+"""
+
 import logging
 import re
 from aiogram import Router, F, types
@@ -5,14 +13,12 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, B
 from config import GROUP_ID
 from utils.admin_check import is_admin
 from utils.yandex_disk_client import disk_client
-from aiogram.types import Message
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # ✅ __name__ правильно
 router = Router()
 
 # ============================================================
 # 🔥 БЛОКИ БЕЗОПАСНОСТИ ИЗ YANDEX DISK
-# ✅ Работает и в ЛС, и в группе!
 # ============================================================
 
 @router.message(
@@ -106,7 +112,7 @@ async def group_safety_block_from_disk(message: types.Message):
     logger.info(f"📤 Блок {block_number} отправлен {username}")
 
 # ============================================================
-# ОБРАБОТКА СООБЩЕНИЙ В ГРУППЕ (ОБЩИЙ ОБРАБОТЧИК)
+# ОБРАБОТКА СООБЩЕНИЙ В ГРУППЕ
 # ============================================================
 
 @router.message(F.chat.type.in_({"group", "supergroup"}))
@@ -150,8 +156,9 @@ async def handle_group_profile(message: types.Message, user_id: int):
         )
         return
     
-    fio = user[3] or "Не указано"
-    rank = user[4] or "Не указано"
+    # ✅ ИСПРАВЛЕНО: используем .get() для словарей
+    fio = user.get('fio') or "Не указано"
+    rank = user.get('rank') or "Не указано"
     
     await message.answer(
         f"👤 <b>{fio}</b>\n"
