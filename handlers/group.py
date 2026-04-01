@@ -5,6 +5,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, B
 from config import GROUP_ID
 from utils.admin_check import is_admin
 from utils.yandex_disk_client import disk_client
+from aiogram.types import Message
 
 logger = logging.getLogger(__name__)
 router = Router()
