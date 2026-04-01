@@ -7,7 +7,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
-
+from aiogram.types import Message
 from states import RegistrationState
 from db_manager import db, get_user, add_user, update_user, set_registration_complete
 from validators import is_valid_date
