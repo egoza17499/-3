@@ -1,16 +1,21 @@
-from aiogram import Router, F, types, Message
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+🔧 handlers/update_housing.py
+Админ команда для обновления информации о жилье
+"""
+
+from aiogram import Router, F, types
+from aiogram.types import Message  # ✅ ИСПРАВЛЕНО: Message из aiogram.types
 from aiogram.fsm.context import FSMContext
 from config import ADMIN_IDS
 import logging
-import psycopg2
-from config import DATABASE_URL
 
-
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # ✅ __name__ правильно
 router = Router()
 
 @router.message(F.text == "/update_housing")
-async def update_housing_command(message: types.Message):
+async def update_housing_command(message: Message):  # ✅ Message теперь определён
     """Админ команда для обновления информации о жилье"""
     
     user_id = message.from_user.id
@@ -36,5 +41,3 @@ async def update_housing_command(message: types.Message):
     except Exception as e:
         logger.error(f"Ошибка при обновлении жилья: {e}")
         await message.answer(f"❌ Ошибка: {e}")
-
-# Импортируем этот роутер в main.py
