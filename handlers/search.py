@@ -284,12 +284,12 @@ async def admin_edit_user_fio_save(message: Message, state: FSMContext):  # ✅ 
 
 
 # ============================================================
-# ОБРАБОТЧИК: УДАЛЕНИЕ ПОЛЬЗОВАТЕЛЯ
+# ОБРАБОТЧИК: УДАЛЕНИЕ ПОЛЬЗОВАТЕЛЯ (ИСПРАВЛЕНО)
 # ============================================================
 
 @router.callback_query(F.data.startswith("admin_delete_user_"))
 async def admin_delete_user_confirm(callback: CallbackQuery):
-    """Подтверждение удаления пользователя"""
+    """Показать подтверждение удаления пользователя"""
     
     user_id = callback.from_user.id
     if not await is_admin(user_id, callback.from_user.username):
@@ -309,7 +309,7 @@ async def admin_delete_user_confirm(callback: CallbackQuery):
     
     fio = target_user.get('fio') or "Неизвестно"
     
-    # Показываем подтверждение
+    # ✅ Показываем НОВОЕ сообщение с подтверждением
     keyboard = [
         [InlineKeyboardButton(
             text="✅ Да, удалить",
@@ -321,7 +321,7 @@ async def admin_delete_user_confirm(callback: CallbackQuery):
         )]
     ]
     
-    await callback.message.edit_text(
+    await callback.message.answer(
         f"🗑️ <b>Удаление пользователя</b>\n\n"
         f"Вы действительно хотите удалить пользователя?\n\n"
         f"👤 {fio}\n"
@@ -335,7 +335,7 @@ async def admin_delete_user_confirm(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("admin_delete_user_confirm_"))
 async def admin_delete_user_execute(callback: CallbackQuery):
-    """Удаление пользователя"""
+    """Удаление пользователя (выполняется после подтверждения)"""
     
     user_id = callback.from_user.id
     if not await is_admin(user_id, callback.from_user.username):
@@ -348,17 +348,23 @@ async def admin_delete_user_execute(callback: CallbackQuery):
         await callback.answer("❌ Ошибка: неверный ID", show_alert=True)
         return
     
-    # Удаляем пользователя
+    # ✅ Удаляем пользователя
     success = delete_user(target_user_id)
     
     if success:
-        await callback.message.edit_text(
+        # ✅ Удаляем сообщение с подтверждением
+        try:
+            await callback.message.delete()
+        except:
+            pass
+        
+        await callback.message.answer(
             f"✅ Пользователь {target_user_id} успешно удалён!",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔙 Назад к поиску", callback_data="admin_functions_back")]
             ])
         )
     else:
-        await callback.message.edit_text("❌ Ошибка при удалении пользователя")
+        await callback.answer("❌ Ошибка при удалении пользователя", show_alert=True)
     
     await callback.answer()
