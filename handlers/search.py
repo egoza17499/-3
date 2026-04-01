@@ -287,7 +287,7 @@ async def admin_edit_user_fio_save(message: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("admin_delete_user_"))
 async def admin_delete_user_confirm(callback: CallbackQuery):
-    """Показать подтверждение удаления пользователя (редактирует существующее сообщение)"""
+    """Показать подтверждение удаления пользователя (НОВОЕ сообщение)"""
     
     user_id = callback.from_user.id
     if not await is_admin(user_id, callback.from_user.username):
@@ -319,26 +319,16 @@ async def admin_delete_user_confirm(callback: CallbackQuery):
         )]
     ]
     
-    # ✅ РЕДАКТИРУЕМ существующее сообщение с профилем
-    try:
-        await callback.message.edit_text(
-            f"🗑️ <b>Удаление пользователя</b>\n\n"
-            f"Вы действительно хотите удалить пользователя?\n\n"
-            f"👤 {fio}\n"
-            f"ID: {target_user_id}\n\n"
-            f"<b>⚠️ Это действие нельзя отменить!</b>",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        # Если редактирование не удалось (сообщение уже удалено или изменено)
-        logger.error(f"❌ Ошибка редактирования сообщения: {e}")
-        # Просто отвечаем на callback, не создаём новое сообщение
-        await callback.answer(
-            "⚠️ Сообщение устарело. Вернитесь к профилю и попробуйте снова.",
-            show_alert=True
-        )
-        return
+    # ✅ ОТПРАВЛЯЕМ НОВОЕ сообщение (не редактируем!)
+    await callback.message.answer(
+        f"🗑️ <b>Удаление пользователя</b>\n\n"
+        f"Вы действительно хотите удалить пользователя?\n\n"
+        f"👤 {fio}\n"
+        f"ID: {target_user_id}\n\n"
+        f"<b>⚠️ Это действие нельзя отменить!</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
+    )
     
     await callback.answer()
 
